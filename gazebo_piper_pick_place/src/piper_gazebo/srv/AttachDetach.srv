@@ -1,0 +1,13 @@
+# 机器人模型名，例如 piper。
+string robot_model
+# 机器人上用于连接物体的 link，例如 link6。
+string robot_link
+# 物体模型名，例如 green_cylinder。
+string object_model
+# 物体上用于连接的 link，本示例统一为 link。
+string object_link
+---
+# true 表示 attach/detach 请求已成功处理。
+bool success
+# 成功或失败的简短说明，便于日志排查。
+string message

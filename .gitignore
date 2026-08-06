@@ -1,0 +1,33 @@
+# ===== 运行产物(不上传)=====
+shared_camera_data/
+camera_data/
+log/
+logs/*
+!graspnet-baseline/logs/
+!graspnet-baseline/logs/log_rs/
+!graspnet-baseline/logs/log_rs/checkpoint.tar
+*.log
+*.pid
+
+# ===== 构建产物 =====
+build/
+install/
+log/
+__pycache__/
+*.pyc
+*.pyo
+
+# ===== 本地调试 =====
+*.tmp
+*.orig
+.DS_Store
+
+# ===== 大文件/环境 =====
+# 镜像 tar 备份(若放回 docker/ 会自动忽略)
+docker/*.tar.gz
+
+# ===== Claude 内部文档(不上传)=====
+docs/superpowers/
+
+# 保留模型权重(即使 logs/ 忽略)
+!graspnet-baseline/logs/log_rs/checkpoint.tar

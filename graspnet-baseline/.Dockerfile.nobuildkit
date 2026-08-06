@@ -1,0 +1,96 @@
+# syntax=docker/dockerfile:1.7
+
+FROM nvcr.io/nvidia/pytorch:22.03-py3
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_TRUSTED_HOST=pypi.tuna.tsinghua.edu.cn
+ARG TORCH_CUDA_ARCH_LIST=8.6
+
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PIP_NO_CACHE_DIR=0 \
+    PIP_INDEX_URL=${PIP_INDEX_URL} \
+    PIP_TRUSTED_HOST=${PIP_TRUSTED_HOST} \
+    TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
+    FORCE_CUDA=1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics \
+    QT_X11_NO_MITSHM=1
+
+RUN sed -i 's|archive.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list && \
+    sed -i 's|security.ubuntu.com|mirrors.tuna.tsinghua.edu.cn|g' /etc/apt/sources.list
+
+RUN \
+ \
+    apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+        libegl1 \
+        libgl1 \
+        libglib2.0-0 \
+        libgomp1 \
+        libgtk-3-0 \
+        libosmesa6 \
+        libsm6 \
+        libx11-6 \
+        libxext6 \
+        libxrender1 \
+        ninja-build \
+        xauth \
+        xvfb && \
+    true
+
+WORKDIR /workspace
+
+ENV PIP_DEFAULT_TIMEOUT=1000 \
+    PIP_RETRIES=20
+
+RUN \
+    python -m pip install \
+        numpy==1.24.4 \
+        scipy==1.10.1 \
+        open3d==0.17.0 \
+        Pillow \
+        tqdm \
+        tensorboard \
+        scikit-learn \
+        transforms3d \
+        trimesh \
+        opencv-python \
+        matplotlib \
+        pywavefront \
+        scikit-image \
+        autolab_core \
+        autolab-perception \
+        cvxopt \
+        dill \
+        h5py \
+        grasp_nms
+
+# Build local CUDA/Python packages in cache-friendly layers.
+COPY pointnet2 ./pointnet2
+RUN \
+ \
+    python -m pip install ./pointnet2
+
+COPY knn ./knn
+RUN \
+ \
+    python -m pip install ./knn
+
+COPY graspnetAPI_local ./graspnetAPI_local
+RUN \
+    python -m pip install ./graspnetAPI_local
+
+# Copy frequently changed project files last.
+COPY dataset ./dataset
+COPY models ./models
+COPY utils ./utils
+COPY doc ./doc
+COPY logs ./logs
+COPY demo.py demo_headless.py demo_save.py inference_from_camera.py test.py train.py command_*.sh requirements.txt README.md ./
+
+CMD ["python", "demo.py", "--checkpoint_path", "logs/log_rs/checkpoint.tar"]

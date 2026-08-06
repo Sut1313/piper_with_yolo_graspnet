@@ -1,0 +1,13 @@
+# 项目统一 C++ 代码风格（clang-format-15）
+BasedOnStyle: LLVM
+IndentWidth: 2
+ColumnLimit: 100
+PointerAlignment: Left
+SortIncludes: true
+AllowShortFunctionsOnASingleLine: Empty
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterFunction: false
+  AfterControlStatement: Never
+  AfterClass: true
+  AfterStruct: true

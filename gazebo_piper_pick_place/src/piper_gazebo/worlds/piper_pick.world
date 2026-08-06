@@ -1,0 +1,216 @@
+<?xml version="1.0" ?>
+<!--
+  piper_pick.world — 抓取执行世界文件（完整版，含机械臂 + 物体 + 相机）
+
+  【物体布局表】
+    name            位置 (x, y, z)        朝向 (roll, pitch, yaw)      几何（圆柱 r×l）      颜色
+    ──────────────────────────────────────────────────────────────────────────────────────────────
+    red_box          (0.45, -0.12, 0.124)  (0, 90°, 0)  横躺 绕Y 旋转   r=0.024, l=0.0675    红 (1,0,0)
+    green_cylinder   (0.45,  0.02, 0.124)  (0,  0°,  0)  竖立            r=0.024, l=0.0675    绿 (0,0.85,0)
+    blue_sphere      (0.45,  0.17, 0.124)  (0,  0°,  0)  竖立            r=0.024, l=0.0675    蓝 (0,0.1,1)
+    说明：z=0.124 = 平台顶面(0.10) + 圆柱半径(0.024)，即"刚好落台不穿台"。
+    物体的世界系位置与 inference_from_camera.py 中 SOURCE_OBJECT_PRIORS_WORLD
+    的源区域先验必须一致（否则候选会被源区域过滤误删）。
+
+  【相机】
+    overhead_camera 位置 (0.1, 0, 0.6)，yaw=0, pitch=60°（斜向 55.9° 有效俯仰角）
+    FOV=1.0rad, 分辨率 800×600, 15Hz, depth 输出（format R8G8B8 → 彩色+深度）
+    话题：/camera/image_raw, /camera/depth/image_raw, /camera/camera_info
+
+  【插件】
+    gazebo_ros_state  — /get_entity_state 等服务（验收脚本查询物体位置用）
+    piper_link_attacher — /piper/attach、/piper/detach 服务：pick_and_place
+                          在"张开夹爪 + TCP 到物体距离 < 4cm"双条件满足时才调用
+                          （门控 attach，防止隔空抓取）
+
+  【重要】本 world 文件有 4 份副本：src 1 份 + install 3 份
+    （gazebo_piper_pick_place/install、src/piper_gazebo/install 等）。
+    修改布局/相机后必须同步所有副本并重新 colcon build，
+    否则 Gazebo 加载的是旧副本（历史教训：只改 src 会"改了没生效"）。
+-->
+<sdf version="1.6">
+  <world name="piper_pick_world">
+    <!-- Gazebo ROS 基础插件 -->
+    <plugin name="gazebo_ros_state" filename="libgazebo_ros_state.so"/>
+    <plugin name="piper_link_attacher" filename="libpiper_link_attacher.so"/>
+
+    <gravity>0 0 -10.0</gravity>
+    <include>
+      <uri>model://sun</uri>
+    </include>
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+
+    <!-- 10cm high neutral platform. Its gray color is outside the object
+         color masks, so the GraspNet preprocessing filters it as background. -->
+    <model name="filterable_platform">
+      <static>true</static>
+      <pose>0.45 0.00 0.050 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry><box><size>0.80 0.50 0.100</size></box></geometry>
+          <surface>
+            <friction><ode><mu>5</mu><mu2>5</mu2></ode></friction>
+            <contact><ode><kp>100000</kp><kd>20</kd></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><box><size>0.80 0.50 0.100</size></box></geometry>
+          <material><ambient>0.55 0.55 0.55 1</ambient><diffuse>0.55 0.55 0.55 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 红色圆柱：横躺（绕Y90°），y 移至 -0.12（8/2 调整，移近中心） -->
+    <model name="red_box">
+      <static>false</static>
+      <pose>0.45 -0.12 0.124000 0 1.570796 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <velocity_decay><linear>1.00</linear><angular>1.00</angular></velocity_decay>
+        <inertial>
+          <mass>0.060</mass>
+          <inertia>
+            <ixx>1.73e-05</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>3.14e-05</iyy>
+            <iyz>0</iyz>
+            <izz>3.14e-05</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <surface>
+            <friction><ode><mu>5</mu><mu2>5</mu2></ode></friction>
+            <contact><ode><kp>80000</kp><kd>20</kd><min_depth>0.001</min_depth><max_vel>0.1</max_vel></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <material><ambient>1 0 0 1</ambient><diffuse>1 0 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 绿色圆柱：竖立放置，位置恢复为原始物体布局 -->
+    <model name="green_cylinder">
+      <static>false</static>
+      <pose>0.45 0.02 0.124000 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <velocity_decay><linear>1.00</linear><angular>1.00</angular></velocity_decay>
+        <inertial>
+          <mass>0.060</mass>
+          <inertia>
+            <ixx>1.73e-05</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>3.14e-05</iyy>
+            <iyz>0</iyz>
+            <izz>3.14e-05</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <surface>
+            <friction><ode><mu>5</mu><mu2>5</mu2></ode></friction>
+            <contact><ode><kp>80000</kp><kd>20</kd><min_depth>0.001</min_depth><max_vel>0.1</max_vel></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <material><ambient>0 0.85 0 1</ambient><diffuse>0 0.85 0 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- 蓝色圆柱：竖立放置，位置恢复为原始物体布局 -->
+    <model name="blue_sphere">
+      <static>false</static>
+      <pose>0.45 0.17 0.124000 0 0 0</pose>
+      <link name="link">
+        <gravity>true</gravity>
+        <velocity_decay><linear>1.00</linear><angular>1.00</angular></velocity_decay>
+        <inertial>
+          <mass>0.060</mass>
+          <inertia>
+            <ixx>1.73e-05</ixx>
+            <ixy>0</ixy>
+            <ixz>0</ixz>
+            <iyy>3.14e-05</iyy>
+            <iyz>0</iyz>
+            <izz>3.14e-05</izz>
+          </inertia>
+        </inertial>
+        <collision name="collision">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <surface>
+            <friction><ode><mu>5</mu><mu2>5</mu2></ode></friction>
+            <contact><ode><kp>80000</kp><kd>20</kd><min_depth>0.001</min_depth><max_vel>0.1</max_vel></ode></contact>
+          </surface>
+        </collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.024</radius><length>0.0675</length></cylinder></geometry>
+          <material><ambient>0 0.1 1 1</ambient><diffuse>0 0.1 1 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <!--
+      顶部 RGB-D 相机（GraspNet 感知用）。
+      位姿：pitch=60°（1.047198rad）斜向俯视物体簇——
+      实测有效俯仰角约 55.9°，相机外参标定值以此为准
+      （CAMERA_TO_WORLD_R / CAMERA_TO_WORLD_T，见 inference_from_camera.py
+       与 grasp_frame_transform.cpp，两边必须一致）。
+      深度输出单位：米（float32），由 camera_bridge_node 换算为毫米 uint16。
+    -->
+    <model name="overhead_camera">
+      <static>true</static>
+      <pose>0.1 0 0.6 0 1.047198 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+          <material><ambient>0.3 0.3 0.3 1</ambient></material>
+        </visual>
+        <collision name="collision">
+          <geometry><box><size>0.03 0.03 0.03</size></box></geometry>
+        </collision>
+
+        <sensor name="camera" type="depth">
+          <!-- 相机内参：HFOV=1.0rad，800×600。sensor name="camera"
+               决定了话题前缀（Humble 的 gazebo_ros_camera 话题为
+               /<sensor_name>/<default_topic>，cameraName 参数不生效）。 -->
+          <camera>
+            <horizontal_fov>1.0</horizontal_fov>
+            <image>
+              <width>800</width>
+              <height>600</height>
+              <format>R8G8B8</format>
+            </image>
+            <depth_camera>
+              <output>depths</output>
+            </depth_camera>
+            <clip>
+              <near>0.1</near>
+              <far>5.0</far>
+            </clip>
+          </camera>
+          <always_on>1</always_on>
+          <update_rate>15.0</update_rate>
+          <visualize>false</visualize>
+          <!-- gazebo_ros_camera 插件：把传感器数据发布为 ROS 2 话题 -->
+          <plugin name="overhead_camera_plugin" filename="libgazebo_ros_camera.so">
+            <alwaysOn>true</alwaysOn>
+            <updateRate>15.0</updateRate>
+            <cameraName>camera</cameraName>
+            <frameName>camera_link</frameName>
+            <hackBaseline>0.07</hackBaseline>
+          </plugin>
+        </sensor>
+      </link>
+    </model>
+
+  </world>
+</sdf>
