@@ -1,0 +1,35 @@
+{
+  "created_at_utc": "2026-10-10T16:48:23.660309+00:00",
+  "data": "piper_blocks.yaml",
+  "base_model": "yolov8s-seg.pt",
+  "epochs": 100,
+  "epochs_completed": 65,
+  "best_epoch": 45,
+  "early_stopped": true,
+  "imgsz": 640,
+  "batch": 8,
+  "device": "0",
+  "seed": 42,
+  "opset": 17,
+  "task": "segment",
+  "classes": [
+    "cube",
+    "cuboid",
+    "cylinder"
+  ],
+  "nc": 3,
+  "best_checkpoint": "models/piper_yolov8s_seg_best.pt",
+  "onnx_model": "models/piper_yolov8s_seg.onnx",
+  "onnx_dynamic": false,
+  "onnx_batch": 1,
+  "validation_metrics": {
+    "box_map50": 0.995,
+    "box_map50_95": 0.95974,
+    "mask_map50": 0.995,
+    "mask_map50_95": 0.75101
+  },
+  "sha256": {
+    "onnx": "bd98dd453af0053a8b1cbafaf09327abb9665925871a6b5c4e15acbbc05258d6",
+    "best_pt": "558479bb80a397fc61f2340866b487282a55875882fecb3fbef24d5a396c0323"
+  }
+}

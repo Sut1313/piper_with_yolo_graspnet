@@ -54,7 +54,7 @@ class CameraBridgeNode(Node):
         super().__init__('camera_bridge_node')
 
         # ── 参数 ──────────────────────────────────────────────────
-        self.declare_parameter('shared_dir', '/home/zzu/piper_graspnet/shared_camera_data')
+        self.declare_parameter('shared_dir', 'shared_camera_data')
         self.declare_parameter('publish_rate_hz', 10.0)      # 发布到共享目录的频率
         self.declare_parameter('factor_depth', 1000.0)        # 深度缩放因子（→毫米）
 

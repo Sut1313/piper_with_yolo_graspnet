@@ -4,12 +4,13 @@ __version__ = '1.0'
 from graspnetAPI import GraspNet
 import open3d as o3d
 import cv2
+import os
 
 # GraspNetAPI example for loading grasp for a scene.
 # change the graspnet_root path
 
 ####################################################################
-graspnet_root = '/home/gmh/graspnet' # ROOT PATH FOR GRASPNET
+graspnet_root = os.environ.get('GRASPNET_ROOT', 'data/graspnet')
 ####################################################################
 
 sceneId = 1

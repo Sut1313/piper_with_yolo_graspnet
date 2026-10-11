@@ -4,6 +4,7 @@ __version__ = '1.0'
 from graspnetAPI import GraspNet
 import cv2
 import open3d as o3d
+import os
 
 # GraspNetAPI example for checking the data completeness.
 # change the graspnet_root path
@@ -13,7 +14,7 @@ sceneId = 5
 annId = 3
 
 ####################################################################
-graspnet_root = '/home/gmh/graspnet' # ROOT PATH FOR GRASPNET
+graspnet_root = os.environ.get('GRASPNET_ROOT', 'data/graspnet')
 ####################################################################
 
 g = GraspNet(graspnet_root, camera = camera, split = 'all')
@@ -73,4 +74,3 @@ img = rect_grasp_group.to_opencv_image(bgr)
 cv2.imshow('rect grasps', img)
 cv2.waitKey(0)
 cv2.destroyAllWindows()
-    

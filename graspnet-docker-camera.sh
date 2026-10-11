@@ -16,8 +16,8 @@
 #   headless  → 无窗口运行（仅保存结果到 shared_camera_data/output/）
 #
 # 流程：
-#   ROS 2 相机话题 → camera_bridge_node → shared_camera_data/
-#     → Docker 内 inference_from_camera.py → GraspNet 推理 → 屏幕显示
+#   ROS 2 RGB-D → yolo_bridge_node → 实例掩膜 + shared_camera_data/
+#     → Docker 内 inference_from_camera.py → 掩膜裁剪点云 → GraspNet 推理
 # ===========================================================================
 
 set -euo pipefail
@@ -27,7 +27,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 # 可用环境变量覆盖镜像名（默认 graspnet-baseline:20.04）
 IMAGE_NAME="${IMAGE_NAME:-graspnet-baseline:20.04}"
 # 共享相机数据目录（与 launch 文件里的 shared_dir 一致）
-SHARED_DIR="${SCRIPT_DIR}/shared_camera_data"
+SHARED_DIR="${PIPER_SHARED_DIR:-${PIPER_YOLO_SHARED_DIR:-${SCRIPT_DIR}/shared_camera_data}}"
 # 模型权重路径（容器内相对路径，推理脚本默认值）
 CHECKPOINT_PATH="${CHECKPOINT_PATH:-logs/log_rs/checkpoint.tar}"
 # 运行模式：gui（默认，显示窗口）/ headless（无窗口，只保存结果）
@@ -83,6 +83,7 @@ case "${MODE}" in
         --num_point 20000 \
         --num_view 300 \
         --collision_thresh 0.01 \
+        --segmentation_source yolo \
         --top_k 50
     ;;
   headless)
@@ -102,6 +103,7 @@ case "${MODE}" in
         --num_point 20000 \
         --num_view 300 \
         --collision_thresh 0.01 \
+        --segmentation_source yolo \
         --top_k 50 \
         --no_display
     echo "Headless inference complete. Results saved in ${SHARED_DIR}/output/"

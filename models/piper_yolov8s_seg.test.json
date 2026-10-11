@@ -1,0 +1,35 @@
+{
+  "dataset": "piper_blocks.yaml",
+  "split": "test",
+  "images": 300,
+  "instances": 557,
+  "background_images": 26,
+  "imgsz": 640,
+  "box": {
+    "precision": 0.9991344604087841,
+    "recall": 0.9995701902183294,
+    "map50": 0.995,
+    "map50_95": 0.9610775897188933,
+    "map50_95_by_class": {
+      "cube": 0.9597119960120535,
+      "cuboid": 0.9591622713553054,
+      "cylinder": 0.9643585017893207
+    }
+  },
+  "mask": {
+    "precision": 0.9991344604087841,
+    "recall": 0.9995701902183294,
+    "map50": 0.995,
+    "map50_95": 0.7241625716136263,
+    "map50_95_by_class": {
+      "cube": 0.7547722945707146,
+      "cuboid": 0.7276904075942927,
+      "cylinder": 0.6900250126758717
+    }
+  },
+  "speed_ms_per_image": {
+    "preprocess": 0.2969965233342009,
+    "pytorch_gpu_inference": 4.290664926669099,
+    "postprocess": 0.4647033699984604
+  }
+}

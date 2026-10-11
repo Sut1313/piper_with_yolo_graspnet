@@ -2,7 +2,7 @@ import os
 from tqdm import tqdm
 
 ### change the root to you path #### 
-graspnet_root = '/home/gmh/graspnet'
+graspnet_root = os.environ.get('GRASPNET_ROOT', 'data/graspnet')
 
 ### change the root to the folder contains rectangle grasp labels ###
 rect_labels_root = 'rect_labels'

@@ -135,8 +135,8 @@ docker run --rm --gpus all -e DISPLAY=$DISPLAY \
 
 | 内容 | 路径 |
 |------|------|
-| 项目代码 | `/home/zzu/graspnet-baseline` |
-| Claude 配置 | `/home/zzu/.claude/settings.json` |
-| Dockerfile | `/home/zzu/graspnet-baseline/Dockerfile.20.04` |
+| 项目代码 | `<仓库根目录>/graspnet-baseline` |
+| 本地工具配置 | 由开发者环境自行管理，不属于仓库 |
+| Dockerfile | `graspnet-baseline/Dockerfile.20.04` |
 | 预训练权重 | `logs/log_rs/checkpoint.tar` |
 | 示例数据 | `doc/example_data/` |

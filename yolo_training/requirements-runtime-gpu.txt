@@ -1,0 +1,5 @@
+# 与系统 CUDA/cuDNN 版本不匹配时，请依据 ONNX Runtime 官方兼容表选择具体版本。
+# ROS Humble (Ubuntu 22.04) 的 cv_bridge/Scipy 与 NumPy 2.x 不兼容，
+# 系统 scipy 1.8 也要求 NumPy <1.25。
+numpy>=1.21.6,<1.25
+onnxruntime-gpu>=1.17,<2

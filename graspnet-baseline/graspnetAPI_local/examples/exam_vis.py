@@ -5,7 +5,8 @@ __version__ = '1.0'
 # change the graspnet_root path
 
 ####################################################################
-graspnet_root = '/home/gmh/graspnet' # ROOT PATH FOR GRASPNET
+import os
+graspnet_root = os.environ.get('GRASPNET_ROOT', 'data/graspnet')
 ####################################################################
 
 from graspnetAPI import GraspNet

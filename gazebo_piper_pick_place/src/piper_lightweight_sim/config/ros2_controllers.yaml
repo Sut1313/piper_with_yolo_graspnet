@@ -1,0 +1,47 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 100
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+    arm_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+    gripper_controller:
+      type: joint_trajectory_controller/JointTrajectoryController
+
+arm_controller:
+  ros__parameters:
+    joints: [joint1, joint2, joint3, joint4, joint5, joint6]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    constraints:
+      stopped_velocity_tolerance: 0.05
+      goal_time: 1.0
+      # Gazebo position control briefly trails the desired path while an
+      # attached object loads the wrist.  Keep goal accuracy tight, but allow
+      # the simulated arm to recover from small transient tracking errors.
+      joint1: {trajectory: 0.35, goal: 0.05}
+      joint2: {trajectory: 0.35, goal: 0.05}
+      joint3: {trajectory: 0.35, goal: 0.05}
+      joint4: {trajectory: 0.35, goal: 0.05}
+      joint5: {trajectory: 0.35, goal: 0.05}
+      joint6: {trajectory: 0.35, goal: 0.05}
+
+gripper_controller:
+  ros__parameters:
+    joints: [gripper]
+    command_interfaces: [position]
+    state_interfaces: [position, velocity]
+    allow_partial_joints_goal: false
+    open_loop_control: false
+    constraints:
+      stopped_velocity_tolerance: 0.01
+      goal_time: 1.0
+      # The simulated mimic fingers lag the virtual drive joint during a
+      # one-second full-stroke command. Do not abort on that transient; the
+      # separate goal tolerance still requires an open command to clear the
+      # fingers, while allowing a close command to stop on object contact as
+      # the upstream real gripper does.
+      gripper: {trajectory: 0.10, goal: 0.04}

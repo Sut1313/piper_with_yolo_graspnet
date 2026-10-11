@@ -111,7 +111,7 @@ colcon build --packages-select piper_gazebo
 source install/setup.bash
 ```
 
-> ⚠️ **编译坑（真实遇到）**：如果机器装过 Homebrew（`/home/linuxbrew`），它的 binutils 会劫持系统 `ld`，导致链接报大量 `undefined reference`（如 `libcurl.so: undefined reference to ssh_pki_export_pubkey_base64`）。排查方式：`which ld` 若指向 `/home/linuxbrew/...` 就是它。
+> ⚠️ **编译坑（真实遇到）**：如果机器装过 Linuxbrew，它的 binutils 可能劫持系统 `ld`，导致链接报大量 `undefined reference`（如 `libcurl.so: undefined reference to ssh_pki_export_pubkey_base64`）。排查方式：`which ld` 若指向 `$(brew --prefix)/...` 就是它。
 > ```bash
 > export PATH=$(echo "$PATH" | tr ':' '\n' | grep -v "linuxbrew" | paste -sd:)
 > # 验证：which ld 应显示 /usr/bin/ld
@@ -876,4 +876,3 @@ gazebo_piper_pick_place/src/
 这套系统的价值不在"三个物体抓取"本身，而在它走过的坑：坐标系映射、通道顺序、外参标定、解析解域、状态同步——每一个都是机器人感知抓取项目的通用命题。希望本文能让你少走几轮"2/3 玄学"的弯路。
 
 全文完。
-

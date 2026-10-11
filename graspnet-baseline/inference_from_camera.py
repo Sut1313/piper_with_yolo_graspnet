@@ -70,8 +70,18 @@ parser.add_argument('--min_object_points', type=int, default=80,
                     help='Minimum points required per colored object')
 parser.add_argument('--grasp_object_margin', type=float, default=0.08,
                     help='Allowed margin around object point cloud for grasp validation [default: 0.08]')
-parser.add_argument('--candidates_per_object', type=int, default=300,
+parser.add_argument('--candidates_per_object', type=int, default=120,
                     help='Number of complete GraspNet 6D candidates to export per object')
+parser.add_argument('--collision_candidate_limit', type=int, default=160,
+                    help='Maximum NMS candidates sent to collision detection [default: 160]')
+parser.add_argument('--seed', type=int, default=42,
+                    help='Base random seed; frame index is added for repeatable retries [default: 42]')
+parser.add_argument('--segmentation_source', choices=['yolo', 'color'], default='yolo',
+                    help='Object segmentation source [default: yolo]')
+parser.add_argument('--instances_filename', default='instances.npz',
+                    help='YOLO instance-mask file in shared_dir [default: instances.npz]')
+parser.add_argument('--camera_pose_file', default='camera_to_world.json',
+                    help='Optional camera/world transform JSON in shared_dir; legacy constants are used when absent')
 cfgs = parser.parse_args()
 
 # ── 全局变量 ──────────────────────────────────────────────────────
@@ -98,6 +108,7 @@ OBJECT_COLOR_RANGES = {
         'upper': np.array([0.35, 0.35, 1.01], dtype=np.float32),
     },
 }
+OBJECT_NAMES = tuple(OBJECT_COLOR_RANGES.keys())
 
 SOURCE_OBJECT_PRIORS_WORLD = {
     # 各物体的世界系源位置先验（物体在 Gazebo world 中的初始摆放位置）。
@@ -126,6 +137,55 @@ CAMERA_TO_WORLD_ROTATION_R = np.array([
     [0.0, -0.56063899, -0.82806033],
 ], dtype=np.float64)
 CAMERA_TO_WORLD_T = np.array([0.072, 0.021, 0.548], dtype=np.float64)
+
+
+def load_camera_world_config():
+    """Load scene-specific optical-frame extrinsics without breaking old worlds."""
+    global CAMERA_TO_WORLD_R, CAMERA_TO_WORLD_ROTATION_R, CAMERA_TO_WORLD_T
+    global SOURCE_OBJECT_PRIORS_WORLD, SOURCE_PRIOR_MAX_XY_DIST
+
+    path = cfgs.camera_pose_file
+    if not os.path.isabs(path):
+        path = os.path.join(cfgs.shared_dir, path)
+    if not os.path.exists(path):
+        print(f"  camera/world config: legacy constants (missing {path})", flush=True)
+        return
+
+    try:
+        with open(path, 'r', encoding='utf-8') as handle:
+            data = json.load(handle)
+        translation_r = np.asarray(data['camera_to_world_r'], dtype=np.float64)
+        rotation_r = np.asarray(
+            data.get('camera_to_world_rotation_r', data['camera_to_world_r']),
+            dtype=np.float64,
+        )
+        translation = np.asarray(data['camera_to_world_t'], dtype=np.float64)
+        if translation_r.shape != (3, 3) or rotation_r.shape != (3, 3):
+            raise ValueError('camera rotation matrices must be 3x3')
+        if translation.shape != (3,):
+            raise ValueError('camera_to_world_t must contain three values')
+        if not np.all(np.isfinite(translation_r)) or not np.all(np.isfinite(rotation_r)) \
+                or not np.all(np.isfinite(translation)):
+            raise ValueError('camera transform contains non-finite values')
+
+        CAMERA_TO_WORLD_R = translation_r
+        CAMERA_TO_WORLD_ROTATION_R = rotation_r
+        CAMERA_TO_WORLD_T = translation
+
+        priors = data.get('source_object_priors_world', {})
+        for name, value in priors.items():
+            prior = np.asarray(value, dtype=np.float64)
+            if prior.shape != (3,) or not np.all(np.isfinite(prior)):
+                raise ValueError(f'invalid source prior for {name!r}')
+            SOURCE_OBJECT_PRIORS_WORLD[str(name)] = prior
+        if 'source_prior_max_xy_dist' in data:
+            SOURCE_PRIOR_MAX_XY_DIST = float(data['source_prior_max_xy_dist'])
+        print(f"  camera/world config: {path}", flush=True)
+    except Exception as exc:
+        raise RuntimeError(f"Failed to load camera/world config {path}: {exc}") from exc
+
+
+load_camera_world_config()
 # GraspNet local +X is the gripper depth/approach direction. Piper's TCP uses
 # +Z as the tool-forward direction for link6 offset compensation, so +Z must
 # follow GraspNet +X; +Y remains the gripper width axis.
@@ -226,29 +286,42 @@ def read_data_from_shared(shared_dir):
         return None, str(e)
 
 
-def read_pick_state(shared_dir):
+def read_pick_state(shared_dir, allowed_names=None):
     """读取 pick_state.json（C++ 侧写入），返回 active 物体名列表。
 
     三态返回：
       None  — 文件缺失/损坏 → 回退全量识别（感知-only 流水线行为不变）
       []    — 无 pending 物体（全部已放置）→ 调用方跳过整帧
-      list  — 过滤未知名称后的 active 名称（perception key）
+      list  — pending 名称；YOLO 模式动态匹配模型标签，颜色模式过滤旧键
 
     为什么只识别 pending（未放置）物体：C++ 主节点每成功抓取一个物体就把它
     从 pending 列表移除（写回本文件）。推理端据此跳过已放置物体，避免
     （1）对已被抓走的物体做无意义推理浪费时间；
     （2）机械臂停在放置区时被误识别为抓取目标（历史误检来源之一）。
-    未知名称被过滤掉，防止 C++ 写入的额外字段污染颜色分割。
+    YOLO 模式不在此处写死类别；若旧规划器名称与新模型标签不相交，实例
+    读取阶段会明确告警并处理全部 YOLO 标签，避免整条感知链被静默清空。
     """
     path = os.path.join(shared_dir, 'pick_state.json')
     try:
         with open(path) as f:
             state = json.load(f)
+        # The executor has already captured a fresh result and is planning or
+        # moving.  Consume any in-flight frame without another network pass.
+        if state.get('perception_enabled') is False:
+            return []
+        active_target = state.get('active_target')
+        if isinstance(active_target, str):
+            if allowed_names is None or active_target in allowed_names:
+                return [active_target]
         pending = state.get('pending')
         if not isinstance(pending, list):
             return None
-        # 只保留已知物体名，未知项（如 C++ 的调试字段）一律丢弃
-        return [n for n in pending if n in OBJECT_COLOR_RANGES]
+        pending = [str(name) for name in pending]
+        if allowed_names is None:
+            # YOLO 类别由 ONNX/instances.npz 决定，不在这里写死。
+            return pending
+        # 颜色回退模式仅支持旧项目固定的三个颜色键。
+        return [name for name in pending if name in allowed_names]
     except (OSError, ValueError):
         # 文件不存在/解析失败时按"全部待抓取"处理（感知-only 模式兼容）
         return None
@@ -284,6 +357,69 @@ def segment_object_points(cloud, color, active_names=None):
     return object_mask, masks, stats
 
 
+def read_yolo_instance_masks(shared_dir, image_shape, active_names=None):
+    """读取 YOLO 节点写出的二维实例掩膜，并按类别合并。
+
+    掩膜仍与原始 RGB-D 像素一一对应；process_data 中用同一个 depth>0
+    布尔索引将它投影到 organized 点云，因此不需要额外做 2D→3D 最近邻匹配。
+    """
+    path = os.path.join(shared_dir, cfgs.instances_filename)
+    if not os.path.exists(path):
+        return None, f"Missing YOLO instances file: {path}"
+    try:
+        with np.load(path, allow_pickle=False) as archive:
+            masks = archive['masks'].astype(bool, copy=False)
+            labels = archive['labels'].astype(str).tolist()
+            scores = archive['scores'].astype(np.float32, copy=False)
+        expected_h, expected_w = image_shape
+        if masks.ndim != 3 or masks.shape[1:] != (expected_h, expected_w):
+            return None, (
+                f"YOLO mask shape mismatch: {masks.shape}, "
+                f"expected (N, {expected_h}, {expected_w})"
+            )
+        if len(labels) != len(masks) or len(scores) != len(masks):
+            return None, "YOLO masks/labels/scores length mismatch"
+
+        detected_labels = set(labels)
+        if active_names is None:
+            enabled = detected_labels
+        else:
+            enabled = detected_labels.intersection(active_names)
+            if active_names and not detected_labels:
+                print(
+                    "  WARNING: no YOLO instances detected for requested "
+                    f"target(s): {active_names}",
+                    flush=True,
+                )
+            elif active_names and not enabled:
+                print(
+                    "  WARNING: pick_state labels do not match YOLO labels; "
+                    f"pending={active_names}, detected={sorted(detected_labels)}; "
+                    "processing all YOLO labels",
+                    flush=True,
+                )
+                enabled = detected_labels
+        merged = {}
+        confidence = {}
+        for mask, label, score in zip(masks, labels, scores):
+            if label not in enabled:
+                continue
+            if label not in merged:
+                merged[label] = mask.copy()
+                confidence[label] = float(score)
+            else:
+                merged[label] |= mask
+                confidence[label] = max(confidence[label], float(score))
+        print(
+            "  YOLO instances: "
+            + (" ".join(f"{name}={confidence[name]:.2f}" for name in sorted(merged)) or "none"),
+            flush=True,
+        )
+        return merged, None
+    except (OSError, KeyError, ValueError) as exc:
+        return None, f"Failed to read YOLO instances: {exc}"
+
+
 def object_centers_from_masks(cloud, object_masks):
     centers = {}
     for name, mask in object_masks.items():
@@ -301,6 +437,27 @@ def make_point_cloud(points, colors):
     return cloud
 
 
+def sample_points_by_instance(cloud, color, object_masks, num_point):
+    """均衡采样各实例，避免大物体把较小物体的点全部挤出固定输入。"""
+    visible = [name for name, name_mask in object_masks.items() if np.any(name_mask)]
+    if not visible:
+        return None, None
+    base_count, remainder = divmod(num_point, len(visible))
+    point_batches = []
+    color_batches = []
+    for index, name in enumerate(visible):
+        source_indices = np.flatnonzero(object_masks[name])
+        sample_count = base_count + (1 if index < remainder else 0)
+        selected = np.random.choice(
+            source_indices, sample_count, replace=len(source_indices) < sample_count)
+        point_batches.append(cloud[selected])
+        color_batches.append(color[selected])
+    sampled_points = np.concatenate(point_batches, axis=0)
+    sampled_colors = np.concatenate(color_batches, axis=0)
+    permutation = np.random.permutation(len(sampled_points))
+    return sampled_points[permutation], sampled_colors[permutation]
+
+
 def atomic_imwrite(path, image):
     tmp_path = f"{path}.tmp.png"
     if not cv2.imwrite(tmp_path, image):
@@ -308,7 +465,7 @@ def atomic_imwrite(path, image):
     os.replace(tmp_path, path)
 
 
-def process_data(data, active_names=None):
+def process_data(data, active_names=None, instance_masks=None):
     """将原始相机数据转换为 GraspNet 输入格式
 
     处理链：深度图反投影成点云 → 剔除无效深度点 → 颜色分割出物体点
@@ -334,11 +491,31 @@ def process_data(data, active_names=None):
 
     print(f"  valid points: {len(cloud_masked)}", flush=True)
 
-    # 颜色分割 + 平面过滤：segment_object_points 按颜色区间把物体点
-    # 从场景中分离出来（灰色平台不在任何颜色区间内 → 自动成为背景），
-    # 得到"只含物体"的点云，这也是 GraspNet 的输入与推理范围。
-    object_mask, object_masks, object_stats = segment_object_points(
-        cloud_masked, color_masked, active_names)
+    if instance_masks is None:
+        # 兼容旧项目：按 RGB 颜色阈值分割物体。
+        object_mask, object_masks, object_stats = segment_object_points(
+            cloud_masked, color_masked, active_names)
+    else:
+        # YOLO 的二维 mask 和 organized 点云共享同一像素网格。
+        # 使用 depth>0 的同一个二维索引后，mask 与 cloud_masked 仍逐点对齐。
+        # YOLO 标签从实例文件动态传入，使 cube/cuboid/cylinder 等训练类别
+        # 原样进入 GraspNet 和 CSV，不再被旧颜色类别表限制。
+        names = sorted(instance_masks)
+        object_masks = {
+            name: instance_masks.get(name, np.zeros(depth.shape, dtype=bool))[mask]
+            for name in names
+        }
+        object_mask = np.zeros(len(cloud_masked), dtype=bool)
+        for name_mask in object_masks.values():
+            object_mask |= name_mask
+        object_stats = {
+            name: int(np.count_nonzero(name_mask))
+            for name, name_mask in object_masks.items()
+        }
+        object_stats['total_object_points'] = int(np.count_nonzero(object_mask))
+        object_stats['all_objects_visible'] = all(
+            object_stats[name] >= cfgs.min_object_points for name in object_masks
+        )
     object_centers_camera = object_centers_from_masks(cloud_masked, object_masks)
     object_points_by_name = {
         name: cloud_masked[mask]
@@ -355,7 +532,7 @@ def process_data(data, active_names=None):
     )
 
     if len(cloud_no_plane) == 0:
-        return None, "No colored object points after plane filtering"
+        return None, "No segmented object points after applying instance masks"
 
     if not object_stats['all_objects_visible']:
         # 物体点不足只告警不报错：可能是部分遮挡/物体已移动，
@@ -367,17 +544,14 @@ def process_data(data, active_names=None):
 
     # ── 采样 ────────────────────────────────────────────────
     num_point = cfgs.num_point
-    has_objects = len(cloud_no_plane) > 0
-    if has_objects:
-        # 仅从物体点采样，不够则 repeat（不填充平面点）
-        # 为什么只采样物体点：GraspNet 输入尺寸固定（num_point），
-        # 把整帧场景点全采样会稀释物体占比，降低抓取质量。
-        replace = len(cloud_no_plane) < num_point
-        idxs = np.random.choice(len(cloud_no_plane), num_point, replace=replace)
-        cloud_sampled = cloud_no_plane[idxs]
-        color_sampled = color_no_plane[idxs]
-    else:
+    if len(cloud_no_plane) == 0:
         return None, "No object points available for sampling"
+    # 固定 num_point 输入按可见实例均分配额；点数不足的实例有放回采样。
+    # 这可避免像素面积最大的物体占满输入，使较小/较远物体仍能产生抓取候选。
+    cloud_sampled, color_sampled = sample_points_by_instance(
+        cloud_masked, color_masked, object_masks, num_point)
+    if cloud_sampled is None:
+        return None, "No visible instance points available for sampling"
 
     # scene_cloud = 全部有效点（供碰撞检测 / 渲染），
     # object_cloud = 仅物体点（供渲染 / 验证）。
@@ -440,6 +614,29 @@ def collision_filter(gg, scene_cloud):
     return gg
 
 
+def prefilter_collision_candidates(gg, processed):
+    """Discard duplicate and off-object grasps before expensive collision tests."""
+    if len(gg) == 0:
+        return gg
+    before = len(gg)
+    gg.nms()
+    gg.sort_by_score()
+    translations = np.asarray(gg.translations)
+    keep = np.zeros(len(gg), dtype=bool)
+    for object_points in processed['object_points_by_name'].values():
+        if object_points is None or len(object_points) == 0:
+            continue
+        bbox_min = object_points.min(axis=0) - cfgs.grasp_object_margin
+        bbox_max = object_points.max(axis=0) + cfgs.grasp_object_margin
+        keep |= np.all((translations >= bbox_min) & (translations <= bbox_max), axis=1)
+    gg = gg[keep]
+    limit = max(1, int(cfgs.collision_candidate_limit))
+    if len(gg) > limit:
+        gg = gg[:limit]
+    print(f"  before collision prefilter: {before} -> {len(gg)}", flush=True)
+    return gg
+
+
 def validate_grasps(gg, object_points):
     """Check whether final grasp centers are near the segmented object cloud."""
     result = {
@@ -471,7 +668,7 @@ def validate_grasps(gg, object_points):
 
 
 def select_object_grasp_targets(gg, processed):
-    """Select one GraspNet 6D grasp pose per colored object.
+    """Select GraspNet 6D grasp candidates for every segmented object class.
 
     为每个物体挑选候选抓取：
     1. 对全部抓取做 NMS（去重）+ 按分数排序；
@@ -567,9 +764,10 @@ def write_frame_validation(shared_dir, frame_idx, processed, gg, grasp_validatio
     所有文件都先写 .tmp 再 rename（原子写），防止 C++ 侧读到半行。
     """
     grasp_targets = select_object_grasp_targets(gg, processed)
+    output_timestamp = time.time()
     output = {
         'frame': int(frame_idx),
-        'timestamp': time.time(),
+        'timestamp': output_timestamp,
         'active_objects': sorted(processed['object_masks']),
         'valid_scene_points': int(len(processed['scene_cloud'].points)),
         'object_stats': processed['object_stats'],
@@ -604,8 +802,10 @@ def write_frame_validation(shared_dir, frame_idx, processed, gg, grasp_validatio
         },
     }
     path = os.path.join(shared_dir, 'last_validation.json')
-    with open(path, 'w') as f:
+    tmp_json_path = f"{path}.tmp"
+    with open(tmp_json_path, 'w') as f:
         json.dump(output, f, indent=2)
+    os.replace(tmp_json_path, path)
 
     # perception_targets.csv：每个物体的相机系中心（旧接口，仅保留兼容）
     csv_path = os.path.join(shared_dir, 'perception_targets.csv')
@@ -634,6 +834,7 @@ def write_frame_validation(shared_dir, frame_idx, processed, gg, grasp_validatio
         'center_camera_x', 'center_camera_y', 'center_camera_z',
         'link6_grasp_z', 'tcp_forward_z',
         'source_dist_xy',
+        'frame_sequence', 'timestamp',
     ]
     with open(tmp_grasp_path, 'w') as f:
         f.write(','.join(header) + '\n')
@@ -663,6 +864,8 @@ def write_frame_validation(shared_dir, frame_idx, processed, gg, grasp_validatio
                     f"{target['link6_grasp_z']:.9f}",
                     f"{target['tcp_forward_z']:.9f}",
                     f"{target['source_dist_xy']:.9f}",
+                    str(int(frame_idx)),
+                    f"{output_timestamp:.9f}",
                 ]
                 f.write(','.join(row) + '\n')
     os.replace(tmp_grasp_path, grasp_csv_path)
@@ -873,6 +1076,7 @@ def main():
     print(f"GraspNet Continuous Inference from Camera", flush=True)
     print(f"  checkpoint:  {cfgs.checkpoint_path}", flush=True)
     print(f"  shared_dir:  {cfgs.shared_dir}", flush=True)
+    print(f"  segmentation:{cfgs.segmentation_source}", flush=True)
     print(f"  device:      {device}", flush=True)
     print(f"  display:     {'ON' if not cfgs.no_display else 'OFF'}", flush=True)
     print(f"=" * 60, flush=True)
@@ -910,16 +1114,25 @@ def main():
 
         # 读取感知状态（pick_state.json）：只识别尚未放置的物体
         # （状态过滤的历史动机：减少误检、跳过已放置物体，见 read_pick_state）
-        active_names = read_pick_state(cfgs.shared_dir)
-        if active_names is None:
-            active_names = list(OBJECT_COLOR_RANGES.keys())
+        allowed_state_names = OBJECT_NAMES if cfgs.segmentation_source == 'color' else None
+        active_names = read_pick_state(cfgs.shared_dir, allowed_state_names)
+        if active_names is None and cfgs.segmentation_source == 'color':
+            active_names = list(OBJECT_NAMES)
         if active_names != last_active:
             print(f"  pick_state: active={active_names}", flush=True)
             last_active = active_names
 
         try:
+            # Keep retries varied but reproducible.  Gating ensures frame_count
+            # now advances only for explicit perception requests.
+            frame_seed = int(cfgs.seed) + frame_count
+            np.random.seed(frame_seed)
+            torch.manual_seed(frame_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(frame_seed)
+
             # 全部已放置：跳过整帧（保留上一帧 CSV），避免空识别刷屏
-            if not active_names:
+            if active_names == []:
                 print("  No pending objects (all placed); skipping frame.", flush=True)
                 clear_ready_flag(cfgs.shared_dir)
                 continue
@@ -931,19 +1144,30 @@ def main():
                 clear_ready_flag(cfgs.shared_dir)
                 continue
 
-            # 3. 处理数据（只识别 active 物体）
-            processed, err = process_data(data, active_names)
+            # 3. 读取 YOLO 二维实例掩膜，并用像素对应关系裁剪三维点云。
+            instance_masks = None
+            if cfgs.segmentation_source == 'yolo':
+                instance_masks, err = read_yolo_instance_masks(
+                    cfgs.shared_dir, data['depth'].shape, active_names)
+                if err:
+                    print(f"  Instance-mask error: {err}", flush=True)
+                    clear_ready_flag(cfgs.shared_dir)
+                    continue
+
+            # 4. 处理数据（只保留 active 物体的点云）
+            processed, err = process_data(data, active_names, instance_masks)
             if err:
                 print(f"  Process error: {err}", flush=True)
                 clear_ready_flag(cfgs.shared_dir)
                 continue
 
-            # 4. 运行推理
+            # 5. 运行推理
             t2 = time.time()
             gg = run_inference(net, processed['end_points'])
             infer_time = time.time() - t2
 
-            # 5. 碰撞过滤
+            # 6. 碰撞过滤
+            gg = prefilter_collision_candidates(gg, processed)
             if cfgs.collision_thresh > 0:
                 t3 = time.time()
                 gg = collision_filter(gg, processed['scene_cloud'])
@@ -954,7 +1178,7 @@ def main():
             grasp_validation = validate_grasps(gg, processed['object_points'])
             write_frame_validation(cfgs.shared_dir, frame_count, processed, gg, grasp_validation)
 
-            # 6. 渲染并显示（渲染在推理主线程，显示在 display_loop 线程，
+            # 7. 渲染并显示（渲染在推理主线程，显示在 display_loop 线程，
             # 通过 latest_result_image + display_lock 交接，避免跨线程竞争）
             if not cfgs.no_display:
                 result_img = render_result(gg, processed['scene_cloud'],
@@ -965,7 +1189,7 @@ def main():
                 with display_lock:
                     latest_result_image = result_img
 
-            # 7. 保存结果（grasps_XXXX.npy / scene_XXXX.pcd / objects_XXXX.pcd，
+            # 8. 保存结果（grasps_XXXX.npy / scene_XXXX.pcd / objects_XXXX.pcd，
             # 供主机端 open3d_result_viewer.py 复盘）
             output_dir = os.path.join(cfgs.shared_dir, 'output')
             os.makedirs(output_dir, exist_ok=True)
@@ -993,7 +1217,7 @@ def main():
             import traceback
             traceback.print_exc()
 
-        # 8. 清除标志 → 等待下一帧
+        # 9. 清除标志 → 等待下一帧
         clear_ready_flag(cfgs.shared_dir)
 
     # ── 清理 ───────────────────────────────────────────────────

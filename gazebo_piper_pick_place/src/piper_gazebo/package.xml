@@ -27,6 +27,7 @@
   <exec_depend>joint_state_publisher</exec_depend>
   <exec_depend>joint_state_publisher_gui</exec_depend>
   <exec_depend>joint_trajectory_controller</exec_depend>
+  <exec_depend>piper_yolo</exec_depend>
   <exec_depend>rosidl_default_runtime</exec_depend>
   <exec_depend>rviz2</exec_depend>
   <exec_depend>xacro</exec_depend>

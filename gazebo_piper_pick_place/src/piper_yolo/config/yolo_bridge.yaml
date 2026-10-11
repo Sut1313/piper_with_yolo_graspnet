@@ -1,0 +1,23 @@
+yolo_bridge_node:
+  ros__parameters:
+    # The launch file replaces these portable fallbacks with paths discovered
+    # from the checkout. They also work when starting the node from repo root.
+    model_path: models/piper_yolov8s_seg.onnx
+    shared_dir: shared_camera_data
+    class_names: [cube, cuboid, cylinder]
+    color_topic: /camera/image_raw
+    depth_topic: /camera/depth/image_raw
+    camera_info_topic: /camera/camera_info
+    confidence_threshold: 0.35
+    iou_threshold: 0.50
+    max_detections: 20
+    image_size: 640
+    prefer_cuda: true
+    depth_factor: 1000.0
+    sync_queue_size: 10
+    sync_slop: 0.05
+    # Match the upstream real_piper_graspnet RGB-D bridge cadence (5 Hz).
+    min_publish_interval: 0.20
+    mask_erode_pixels: 1
+    filter_finished_objects: true
+    write_debug_overlay: true

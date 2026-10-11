@@ -18,8 +18,7 @@ if [[ ! -f "${PN2_UTILS}" ]]; then
 fi
 if ! grep -q "if self.ret_grouped_xyz:" "${PN2_UTILS}"; then
   echo "ERROR: ${PN2_UTILS} 是旧版(缺 ret_grouped_xyz 返回分支),构建出的镜像推理必崩!" >&2
-  echo "       请使用修复版代码构建: ~/piper_graspnet 或 ~/real_piper_graspnet 的" >&2
-  echo "       graspnet-baseline 目录;勿用 ~/master(旧版,442 行)" >&2
+  echo "       请从本仓库的 graspnet-baseline 目录运行构建，勿用旧版副本。" >&2
   exit 1
 fi
 echo "OK: pointnet2 为修复版,继续构建..."

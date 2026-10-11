@@ -23,7 +23,7 @@ bool PickNode::loadPerceptionTargets(
     std::map<std::string, std::vector<PerceptionTarget>>& targets) {
   const std::string path = get_parameter_or<std::string>(
       "perception_grasps_path",
-      "/home/zzu/piper_graspnet/shared_camera_data/perception_grasps.csv");
+      "shared_camera_data/perception_grasps.csv");
 
   struct stat file_stat
   {

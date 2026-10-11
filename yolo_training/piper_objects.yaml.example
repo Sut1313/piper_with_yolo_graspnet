@@ -1,0 +1,11 @@
+# 复制为 piper_objects.yaml；此相对路径以本 YAML 所在目录为基准。
+path: ../datasets/piper_objects
+train: images/train
+val: images/val
+test: images/test
+
+# 类别编号必须与训练标签一致，也必须与 ROS 节点配置中的 class_names 一致。
+names:
+  0: cube
+  1: cuboid
+  2: cylinder

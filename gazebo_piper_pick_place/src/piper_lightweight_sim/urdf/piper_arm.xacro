@@ -1,0 +1,333 @@
+<?xml version="1.0"?>
+<!-- =====================================================================
+     AgileX PiPER 六轴臂 —— 参数直接取自官方 agx_arm_urdf/piper/urdf/piper_description.urdf
+     (https://github.com/agilexrobotics/agx_arm_urdf), 未做任何修改:
+       · 关节 origin/axis/limit 原文照搬
+       · 连杆质量与**完整惯量张量**用官方值(不再是我之前从 CAD 算的包围盒近似)
+       · 网格用官方 meshes/ (米制, 所以**不需要 scale**; 视觉用 .dae, 碰撞用 .stl)
+
+     与之前版本的差异(官方文件为准):
+       joint1 限位  ±2.6179938   (之前误用 -2.618/2.168)
+       joint6 速度  5 rad/s      (之前误用 3)
+       link2  质量  1.16 kg      (之前 1.17)
+
+     link6 末端按官方定义挂 flange_link、tool0 安装坐标系与 PiPER 平行夹爪。
+     ===================================================================== -->
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:macro name="piper_arm" params="prefix parent *origin">
+
+    <!-- ───────── base_link ───────── -->
+    <link name="${prefix}base_link">
+      <inertial>
+        <origin xyz="-0.00473641164191482 2.56829134630247E-05 0.041451518036016" rpy="0 0 0"/>
+        <mass value="1.02"/>
+        <inertia ixx="0.00267433" ixy="-0.00000073" ixz="-0.00017389" iyy="0.00282612" iyz="0.0000004" izz="0.00089624"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_base_link.dae"/></geometry>
+        <material name="alu"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_base_link.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link1 ───────── -->
+    <link name="${prefix}link1">
+      <inertial>
+        <origin xyz="0.00032 -0.00041 -0.00348" rpy="0 0 0"/>
+        <mass value="0.71"/>
+        <inertia ixx="0.00050027" ixy="0.00000078" ixz="0.00000626" iyy="0.00040879" iyz="0.00000462" izz="0.00045802"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link1.dae"/></geometry>
+        <material name="dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link1.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link2 ───────── -->
+    <link name="${prefix}link2">
+      <inertial>
+        <origin xyz="0.21852 -0.00861 0.00126" rpy="0 0 0"/>
+        <mass value="1.16"/>
+        <inertia ixx="0.00111915" ixy="0.00182916" ixz="0.00019233" iyy="0.06763251" iyz="0.00000767" izz="0.067559"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link2.dae"/></geometry>
+        <material name="accent"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link2.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link3 ───────── -->
+    <link name="${prefix}link3">
+      <inertial>
+        <origin xyz="-0.01999 -0.14808 -0.00053" rpy="0 0 0"/>
+        <mass value="0.5"/>
+        <inertia ixx="0.01347608" ixy="0.00161034" ixz="0.00000066" iyy="0.00046377" iyz="0.00000162" izz="0.01363321"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link3.dae"/></geometry>
+        <material name="alu"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link3.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link4 ───────── -->
+    <link name="${prefix}link4">
+      <inertial>
+        <origin xyz="0.00013 -0.00076 -0.00394" rpy="0 0 0"/>
+        <mass value="0.38"/>
+        <inertia ixx="0.00017844" ixy="0.00000062" ixz="0.00000067" iyy="0.00018914" iyz="0.00000408" izz="0.00014613"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link4.dae"/></geometry>
+        <material name="dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link4.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link5 ───────── -->
+    <link name="${prefix}link5">
+      <inertial>
+        <origin xyz="0.00018 -0.06104 -0.00227" rpy="0 0 0"/>
+        <mass value="0.383"/>
+        <inertia ixx="0.00172318" ixy="0.00000259" ixz="0.00000010" iyy="0.00017936" iyz="0.00000990" izz="0.00171172"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link5.dae"/></geometry>
+        <material name="accent"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link5.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- ───────── link6 ───────── -->
+    <link name="${prefix}link6">
+      <inertial>
+        <origin xyz="-0.00003 0.00006 -0.002" rpy="0 0 0"/>
+        <mass value="0.007"/>
+        <inertia ixx="0.00152112" ixy="0.00000202" ixz="0.00000261" iyy="0.00138626" iyz="0.00000002" izz="0.00031152"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link6.dae"/></geometry>
+        <material name="dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_link6.stl"/></geometry>
+      </collision>
+    </link>
+    <!-- 安装: 由调用者给出 origin (base_link 的原点在 J1 轴线上, +Z 就是 J1 轴) -->
+    <joint name="${prefix}mount_joint" type="fixed">
+      <parent link="${parent}"/>
+      <child link="${prefix}base_link"/>
+      <xacro:insert_block name="origin"/>
+    </joint>
+
+    <joint name="${prefix}joint1" type="revolute">
+      <parent link="${prefix}base_link"/>
+      <child link="${prefix}link1"/>
+      <origin xyz="0 0 0.123" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.6179938" upper="2.6179938" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <joint name="${prefix}joint2" type="revolute">
+      <parent link="${prefix}link1"/>
+      <child link="${prefix}link2"/>
+      <origin xyz="0 0 0" rpy="1.5707963 -0.1357866 -3.1415926"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="3.1415926" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <joint name="${prefix}joint3" type="revolute">
+      <parent link="${prefix}link2"/>
+      <child link="${prefix}link3"/>
+      <origin xyz="0.28503 0 0" rpy="0 0 -1.7938494"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.9670597" upper="0" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <joint name="${prefix}joint4" type="revolute">
+      <parent link="${prefix}link3"/>
+      <child link="${prefix}link4"/>
+      <origin xyz="-0.02198 -0.25075 0" rpy="1.5707963 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-1.7453292" upper="1.7453292" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <joint name="${prefix}joint5" type="revolute">
+      <parent link="${prefix}link4"/>
+      <child link="${prefix}link5"/>
+      <origin xyz="0 0 0" rpy="-1.5707963 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-1.2217304" upper="1.2217304" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <joint name="${prefix}joint6" type="revolute">
+      <parent link="${prefix}link5"/>
+      <child link="${prefix}link6"/>
+      <origin xyz="8.8259E-05 -0.091 0" rpy="1.5707963 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="-2.0943951" upper="2.0943951" effort="100" velocity="5"/>
+      <dynamics damping="0.3" friction="0.1"/>
+    </joint>
+    <!-- ───────── flange_link (官方 piper_with_gripper_description.xacro 里的定义) ───────── -->
+    <link name="${prefix}flange_link">
+      <inertial>
+        <origin xyz="1.151691e-03 0.782428e-03 4.798051e-03" rpy="0 0 0"/>
+        <mass value="0.04"/>
+        <inertia ixx="9.935389e-06" ixy="0.0" ixz="0.0"
+                 iyy="10.508003e-06" iyz="0.0" izz="19.652873e-06"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_flange.dae"/></geometry>
+        <material name="dark"/>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_flange.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}flange_joint" type="fixed">
+      <parent link="${prefix}link6"/>
+      <child link="${prefix}flange_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 末端安装坐标系: 法兰外端面。保留旧 frame 名以兼容现有规划与 TF 用户。 -->
+    <link name="${prefix}tool0"/>
+    <joint name="${prefix}link6_to_tool0" type="fixed">
+      <parent link="${prefix}flange_link"/>
+      <child link="${prefix}tool0"/>
+      <origin xyz="0 0 0.0105" rpy="0 0 0"/>
+    </joint>
+
+    <!-- ───────── PiPER 官方平行夹爪 ─────────
+         几何、惯性、安装位姿和限位取自 agx_arm_urdf/piper/
+         urdf/piper_with_gripper_description.xacro。${prefix}gripper 是唯一主动关节，
+         位置值表示两指总开口宽度（0=闭合，0.10 m=全开）；两根指爪通过
+         mimic 分别以 +0.5/-0.5 倍联动。 -->
+    <link name="${prefix}gripper_base">
+      <inertial>
+        <origin xyz="-0.000183807162235591 8.05033155577911E-05 0.0321436689908876" rpy="0 0 0"/>
+        <mass value="0.45"/>
+        <inertia ixx="0.00092934" ixy="0.00000034" ixz="-0.00000738"
+                 iyy="0.00071447" iyz="0.00000005" izz="0.00039442"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_base.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_base.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_base_joint" type="fixed">
+      <parent link="${prefix}flange_link"/>
+      <child link="${prefix}gripper_base"/>
+      <origin xyz="0 0 0.0045" rpy="0 0 0"/>
+    </joint>
+
+    <!-- 夹爪驱动器的抽象连杆：无几何，主关节值即总开口宽度。
+         PiPER 官方显示模型把该 link 定义为空 link，但 sdformat 会删除没有
+         inertial 的可动 link，连带删除 gripper 主关节，使后续 mimic 关节
+         找不到驱动源。下面是仅用于保留该仿真自由度的轻量虚拟惯量；
+         官方夹爪实体仍为 0.45 + 0.025 + 0.025 = 0.50 kg。 -->
+    <link name="${prefix}gripper_link">
+      <inertial>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <mass value="0.001"/>
+        <inertia ixx="1.0e-8" ixy="0" ixz="0"
+                 iyy="1.0e-8" iyz="0" izz="1.0e-8"/>
+      </inertial>
+    </link>
+    <joint name="${prefix}gripper" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="0.1" effort="10" velocity="3"/>
+      <!-- 虚拟驱动关节不加摩擦，实体指爪的阻尼保留在两个 mimic 关节上。 -->
+      <dynamics damping="0" friction="0"/>
+    </joint>
+
+    <link name="${prefix}gripper_link1">
+      <inertial>
+        <origin xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_link1.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_link1.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint1" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link1"/>
+      <origin xyz="0 0 0.138" rpy="1.5707963 0 0"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="0" upper="0.05" effort="10" velocity="3"/>
+      <dynamics damping="0.05" friction="0.01"/>
+      <mimic joint="${prefix}gripper" multiplier="0.5" offset="0.0"/>
+    </joint>
+
+    <link name="${prefix}gripper_link2">
+      <inertial>
+        <origin xyz="0.00065123185041968 -0.0491929869131989 0.00972258769184025" rpy="0 0 0"/>
+        <mass value="0.025"/>
+        <inertia ixx="0.00007371" ixy="-0.00000113" ixz="0.00000021"
+                 iyy="0.00000781" iyz="-0.00001372" izz="0.0000747"/>
+      </inertial>
+      <visual>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_link2.dae"/></geometry>
+      </visual>
+      <collision>
+        <origin xyz="0 0 0" rpy="0 0 0"/>
+        <geometry><mesh filename="package://piper_lightweight_sim/meshes/piper_gripper_link2.stl"/></geometry>
+      </collision>
+    </link>
+
+    <joint name="${prefix}gripper_joint2" type="prismatic">
+      <parent link="${prefix}gripper_base"/>
+      <child link="${prefix}gripper_link2"/>
+      <origin xyz="0 0 0.138" rpy="1.5707963 0 -3.1415926"/>
+      <axis xyz="0 0 -1"/>
+      <limit lower="-0.05" upper="0" effort="10" velocity="3"/>
+      <dynamics damping="0.05" friction="0.01"/>
+      <mimic joint="${prefix}gripper" multiplier="-0.5" offset="0.0"/>
+    </joint>
+
+  </xacro:macro>
+</robot>

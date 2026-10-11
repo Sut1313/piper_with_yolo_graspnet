@@ -1,5 +1,15 @@
 # ===== 运行产物(不上传)=====
 shared_camera_data/
+models/*.onnx
+models/*.pt
+# The runtime model is intentionally versioned so a fresh clone can run.
+!models/piper_yolov8s_seg.onnx
+/*.pt
+weights/*.pt
+runs/
+.venv-yolo-train/
+.venv-yolo-runtime/
+yolo_training/piper_objects.yaml
 camera_data/
 log/
 logs/*

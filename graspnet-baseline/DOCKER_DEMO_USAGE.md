@@ -7,7 +7,7 @@
 进入项目根目录：
 
 ```bash
-cd /home/zzu/graspnet-baseline
+cd graspnet-baseline
 ```
 
 执行构建：
@@ -76,7 +76,7 @@ COLLISION_THRESH=0.01 ./docker-run-demo.sh save
 输出目录：
 
 ```text
-/home/zzu/graspnet-baseline/outputs
+graspnet-baseline/outputs
 ```
 
 生成文件：

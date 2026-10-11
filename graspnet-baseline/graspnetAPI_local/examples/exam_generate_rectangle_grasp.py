@@ -32,7 +32,7 @@ def generate_scene_rectangle_grasp(sceneId, dump_folder, camera):
 
 if __name__ == '__main__':
     ####################################################################
-    graspnet_root = '/home/minghao/graspnet' # ROOT PATH FOR GRASPNET ##
+    graspnet_root = os.environ.get('GRASPNET_ROOT', 'data/graspnet')
     ####################################################################
 
     dump_folder = 'rect_labels'

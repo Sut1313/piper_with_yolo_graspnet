@@ -1,0 +1,135 @@
+<?xml version="1.0"?>
+<sdf version="1.9">
+  <world name="piper_lightweight">
+    <physics name="1ms" type="ignored">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+    </physics>
+
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+
+    <scene>
+      <ambient>0.30 0.31 0.34 1</ambient>
+      <background>0.68 0.72 0.78 1</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 5 0.55 0 0.70</pose>
+      <diffuse>0.95 0.93 0.88 1</diffuse>
+      <specular>0.25 0.25 0.25 1</specular>
+      <direction>-0.45 0.35 -1</direction>
+    </light>
+    <light type="directional" name="fill">
+      <cast_shadows>false</cast_shadows>
+      <diffuse>0.20 0.22 0.27 1</diffuse>
+      <direction>0.4 -0.4 -1</direction>
+    </light>
+
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry><plane><normal>0 0 1</normal><size>8 8</size></plane></geometry>
+        </collision>
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>8 8</size></plane></geometry>
+          <material>
+            <ambient>0.22 0.23 0.25 1</ambient>
+            <diffuse>0.31 0.32 0.35 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!--
+      The tabletop top surface is z=0.2504858 m, exactly level with the left
+      arm base in the full vehicle:
+        base_footprint->base_frame_link z 0.2184858
+        base_frame_link->arm1 base_link z 0.0320000
+    -->
+    <model name="worktable">
+      <static>true</static>
+      <pose>0.66 0.187732 0 0 0 0</pose>
+      <link name="table">
+        <collision name="top_collision">
+          <pose>0 0 0.2254858 0 0 0</pose>
+          <geometry><box><size>0.82 0.68 0.05</size></box></geometry>
+        </collision>
+        <visual name="top_visual">
+          <pose>0 0 0.2254858 0 0 0</pose>
+          <geometry><box><size>0.82 0.68 0.05</size></box></geometry>
+          <material>
+            <ambient>0.72 0.72 0.70 1</ambient>
+            <diffuse>0.90 0.90 0.87 1</diffuse>
+          </material>
+        </visual>
+        <collision name="leg1_collision">
+          <pose>-0.34 -0.27 0.1002429 0 0 0</pose>
+          <geometry><box><size>0.05 0.05 0.2004858</size></box></geometry>
+        </collision>
+        <collision name="leg2_collision">
+          <pose>-0.34 0.27 0.1002429 0 0 0</pose>
+          <geometry><box><size>0.05 0.05 0.2004858</size></box></geometry>
+        </collision>
+        <collision name="leg3_collision">
+          <pose>0.34 -0.27 0.1002429 0 0 0</pose>
+          <geometry><box><size>0.05 0.05 0.2004858</size></box></geometry>
+        </collision>
+        <collision name="leg4_collision">
+          <pose>0.34 0.27 0.1002429 0 0 0</pose>
+          <geometry><box><size>0.05 0.05 0.2004858</size></box></geometry>
+        </collision>
+        <visual name="legs_visual">
+          <pose>0 0 0.1002429 0 0 0</pose>
+          <geometry><box><size>0.70 0.05 0.2004858</size></box></geometry>
+          <material><ambient>0.20 0.21 0.23 1</ambient><diffuse>0.30 0.31 0.34 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="cube">
+      <pose>0.54 0.08 0.2904858 0 0 0.28</pose>
+      <link name="link">
+        <inertial><mass>0.12</mass><inertia><ixx>0.00010</ixx><iyy>0.00010</iyy><izz>0.00010</izz></inertia></inertial>
+        <collision name="collision"><geometry><box><size>0.075 0.075 0.075</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.075 0.075 0.075</size></box></geometry>
+          <material><ambient>0.72 0.06 0.08 1</ambient><diffuse>0.95 0.08 0.10 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="cuboid">
+      <pose>0.68 0.19 0.2884858 0 0 -0.38</pose>
+      <link name="link">
+        <inertial><mass>0.15</mass><inertia><ixx>0.00016</ixx><iyy>0.00022</iyy><izz>0.00024</izz></inertia></inertial>
+        <collision name="collision"><geometry><box><size>0.11 0.06 0.07</size></box></geometry></collision>
+        <visual name="visual">
+          <geometry><box><size>0.11 0.06 0.07</size></box></geometry>
+          <material><ambient>0.05 0.58 0.12 1</ambient><diffuse>0.07 0.88 0.17 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="cylinder">
+      <pose>0.56 0.31 0.2954858 0 0 0</pose>
+      <link name="link">
+        <inertial><mass>0.10</mass><inertia><ixx>0.00008</ixx><iyy>0.00008</iyy><izz>0.00005</izz></inertia></inertial>
+        <collision name="collision"><geometry><cylinder><radius>0.032</radius><length>0.085</length></cylinder></geometry></collision>
+        <visual name="visual">
+          <geometry><cylinder><radius>0.032</radius><length>0.085</length></cylinder></geometry>
+          <material><ambient>0.04 0.16 0.70 1</ambient><diffuse>0.05 0.27 0.96 1</diffuse></material>
+        </visual>
+      </link>
+    </model>
+  </world>
+</sdf>

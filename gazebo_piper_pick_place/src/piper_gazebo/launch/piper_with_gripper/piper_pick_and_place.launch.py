@@ -46,6 +46,11 @@ import re
 from ament_index_python.packages import get_package_prefix
 
 from moveit_configs_utils import MoveItConfigsBuilder
+from piper_yolo.paths import default_model_path, default_shared_dir
+
+
+def project_shared_dir():
+    return str(default_shared_dir(__file__))
 
 
 def remove_comments(text: str) -> str:
@@ -63,10 +68,11 @@ def cleanup_perception_files(context, *args, **kwargs):
         本轮会误认为物体"已放置"而跳过抓取（历史坑：重启后不抓任何物体）。
     在 Gazebo 启动的同时（OpaqueFunction）执行，与后续节点并行、无依赖。
     """
-    shared_dir = os.path.join(os.path.expanduser("~"), "piper_graspnet", "shared_camera_data")
+    shared_dir = project_shared_dir()
     os.makedirs(shared_dir, exist_ok=True)
     for filename in ("perception_targets.csv", "perception_grasps.csv",
-                     "pick_state.json"):
+                     "pick_state.json", ".ready", "instances.npz",
+                     "detections.json", "frame_manifest.json"):
         path = os.path.join(shared_dir, filename)
         try:
             os.remove(path)
@@ -86,7 +92,7 @@ def generate_launch_description() -> LaunchDescription:
     #      → broadcaster 完成 → arm_controller + gripper_controller
     #   6. move_group（MoveIt 运动规划核心，moveit_manage_controllers=True
     #      由 MoveIt 接管控制器管理）
-    #   7. camera_bridge_node（相机 → 共享目录，供 Docker 内 GraspNet 读取）
+    #   7. yolo_bridge_node（同步 RGB-D → YOLO 实例掩膜 → GraspNet 共享目录）
     #   8. RViz + MoveIt 面板（可视化）
     #   9. pick_and_place（主执行节点，内部自行等待 move_group 就绪后自动抓取）
     #
@@ -130,7 +136,7 @@ def generate_launch_description() -> LaunchDescription:
         FindPackageShare("piper_gazebo").find("piper_gazebo"),
         "worlds/piper_pick.world",
     )
-    shared_dir = os.path.join(os.path.expanduser("~"), "piper_graspnet", "shared_camera_data")
+    shared_dir = project_shared_dir()
     cleanup_perception = OpaqueFunction(function=cleanup_perception_files)
 
     # ── 3. 启动 Gazebo 服务器（加载带物体的世界） ────────────────────────────
@@ -230,17 +236,15 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[moveit_config.to_dict(), move_group_params],
     )
 
-    # ── 8.5 相机桥接节点（ROS 话题 → 共享目录） ────────────────────────────
-    # 订阅 /camera/image_raw 等话题，按 15Hz 原子写入共享目录
-    # （color.png/depth.png/meta.mat/.ready），供 Docker 内 GraspNet 推理。
-    camera_bridge_node = Node(
-        package="piper_perception",
-        executable="camera_bridge_node",
-        name="camera_bridge_node",
+    # ── 8.5 YOLO 桥接节点（同步 RGB-D → 二维实例掩膜 → 共享目录） ───────────
+    yolo_bridge_node = Node(
+        package="piper_yolo",
+        executable="yolo_bridge_node",
+        name="yolo_bridge_node",
         parameters=[{
             "shared_dir": shared_dir,
-            "publish_rate_hz": 15.0,   # 与 Gazebo 相机帧率一致（15Hz）
-            "factor_depth": 1000.0,    # 深度米 → 毫米
+            "model_path": str(default_model_path(__file__)),
+            "factor_depth": 1000.0,
         }],
         output="screen",
     )
@@ -330,7 +334,7 @@ def generate_launch_description() -> LaunchDescription:
 
     # MoveIt + RViz + 自动抓取
     ld.add_action(node_move_group)
-    ld.add_action(camera_bridge_node)
+    ld.add_action(yolo_bridge_node)
     ld.add_action(node_rviz)
     ld.add_action(node_pick)
 
