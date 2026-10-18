@@ -1,0 +1,39 @@
+table_plane_detector:
+  ros__parameters:
+    use_sim_time: true
+    processing_rate_hz: 5.0
+
+    depth_min_m: 0.20
+    depth_max_m: 2.00
+    crop_min_x_m: -0.90
+    crop_max_x_m: 0.90
+    crop_min_y_m: -0.90
+    crop_max_y_m: 0.90
+
+    voxel_size_m: 0.005
+    ransac_distance_threshold_m: 0.003
+    max_iterations: 500
+    minimum_inlier_count: 1000
+    minimum_inlier_ratio: 0.15
+    maximum_normal_error_deg: 5.0
+    minimum_plane_distance_m: 0.70
+    maximum_plane_distance_m: 1.30
+    maximum_rms_error_m: 0.003
+    minimum_plane_extent_m: 0.30
+
+    normal_reference_frame: world
+    expected_normal_x: 0.0
+    expected_normal_y: 0.0
+    expected_normal_z: 1.0
+    tf_timeout_s: 0.20
+    allow_fixed_normal_fallback: false
+
+    temporal_window_size: 10
+    minimum_tracking_frames: 3
+    maximum_failed_frames: 3
+    maximum_distance_jump_m: 0.02
+    maximum_normal_jump_deg: 2.0
+
+    publish_inliers: true
+    publish_marker: true
+    marker_size_m: 0.80

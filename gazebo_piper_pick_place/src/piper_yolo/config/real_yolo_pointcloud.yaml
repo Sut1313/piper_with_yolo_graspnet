@@ -1,0 +1,37 @@
+real_yolo_pointcloud_node:
+  ros__parameters:
+    model_path: models/tabletop_yolov8s_seg_v2.onnx
+    class_names:
+      [pen, pencil, marker, eraser, ruler, scissors, stapler, tape,
+       sharpener, block, cup, bottle, book, phone, mouse, remote]
+    color_topic: /camera/camera/color/image_raw
+    depth_topic: /camera/camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/camera/color/camera_info
+    cloud_topic: /yolo/object_cloud
+    # Disabled for the GraspNet shared-directory pipeline to avoid PointCloud2
+    # construction/serialization overhead. Override at launch for RViz debug.
+    publish_object_cloud: false
+    overlay_topic: /yolo/overlay
+    detections_topic: /yolo/detections
+    confidence_threshold: 0.35
+    iou_threshold: 0.50
+    max_detections: 20
+    prefer_cuda: true
+    image_size: 640
+    uint16_depth_scale: 0.001
+    minimum_depth_m: 0.10
+    maximum_depth_m: 3.0
+    mask_erode_pixels: 1
+    point_stride: 1
+    max_points_per_instance: 20000
+    sync_queue_size: 10
+    sync_slop: 0.05
+    minimum_publish_interval: 0.10
+    require_aligned_depth_frame: true
+    # Keep ROS outputs active while submitting at most one unconsumed frame to
+    # the existing Docker GraspNet shared-directory handshake.
+    graspnet_bridge_enabled: true
+    shared_dir: shared_camera_data
+    graspnet_depth_factor: 1000.0
+    write_shared_overlay: true
+    graspnet_require_object_points: true

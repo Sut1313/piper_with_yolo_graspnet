@@ -18,7 +18,7 @@ from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
-from piper_yolo.paths import default_model_path, default_shared_dir
+from piper_yolo.paths import default_shared_dir, legacy_grasp_model_path
 
 
 def _clear_stale_perception_files(context):
@@ -213,6 +213,10 @@ def generate_launch_description():
         parameters=[{
             "shared_dir": shared_dir,
             "model_path": model_path,
+            # The lightweight grasp task still uses its original three
+            # geometric labels.  Keep it isolated from the standalone
+            # 16-class tabletop model used by piper_yolo by default.
+            "class_names": ["cube", "cuboid", "cylinder"],
             "color_topic": "/camera/image_raw",
             "depth_topic": "/camera/depth/image_raw",
             "camera_info_topic": "/camera/camera_info",
@@ -250,7 +254,7 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "model_path",
-            default_value=str(default_model_path(pkg)),
+            default_value=str(legacy_grasp_model_path(pkg)),
         ),
         OpaqueFunction(function=_clear_stale_perception_files),
         OpaqueFunction(function=_write_graspnet_camera_config),

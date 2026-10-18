@@ -24,6 +24,7 @@ import sys
 import time
 import argparse
 import threading
+import multiprocessing
 import json
 
 import numpy as np
@@ -88,8 +89,6 @@ cfgs = parser.parse_args()
 running = True
 frame_count = 0
 inference_times = []
-latest_result_image = None
-display_lock = threading.Lock()
 
 OBJECT_COLOR_RANGES = {
     # 各抓取物体的颜色分割阈值（RGB 归一化到 [0,1]）。
@@ -191,14 +190,13 @@ load_camera_world_config()
 # follow GraspNet +X; +Y remains the gripper width axis.
 GRASPNET_TO_PIPER_TCP_R = np.array([
     # GraspNet 局部系 → Piper TCP 系的轴映射：
-    #   GraspNet +X（夹爪进深/接近方向）→ Piper +Z（工具前进方向）
-    #   GraspNet +Y（夹爪宽度轴）       → Piper +Y
-    #   GraspNet +Z                     → Piper -X
-    # 该映射是 C++ 主节点 grasp_frame_transform 的同一份常量的 Python 镜像，
+    # 该矩阵是 C++ grasp_common.hpp 中 calib_18 的逐项 Python 镜像。
+    # 本端只用它计算 tcp_forward_z 等诊断量；候选 CSV 仍保留
+    # GraspNet 的原始相机系旋转矩阵，由 C++ 执行端做最终转换。
     # 修改时必须两边同步（历史坑：不一致会导致抓取姿态整体旋转错误）。
-    [0.0, 0.0, 1.0],
-    [0.0, 1.0, 0.0],
-    [-1.0, 0.0, 0.0],
+    [0.0, -1.0, 0.0],
+    [0.0, 0.0, -1.0],
+    [1.0, 0.0, 0.0],
 ], dtype=np.float64)
 PIPER_TOOL_Z_OFFSET = 0.0
 PIPER_MIN_GRASP_Z = 0.0
@@ -301,6 +299,19 @@ def read_pick_state(shared_dir, allowed_names=None):
     YOLO 模式不在此处写死类别；若旧规划器名称与新模型标签不相交，实例
     读取阶段会明确告警并处理全部 YOLO 标签，避免整条感知链被静默清空。
     """
+    # The real-camera node is currently a perception-only pipeline: it does
+    # not run the simulation pick/place state machine.  Ignore any stale
+    # pick_state.json left in a reused shared directory, otherwise an old
+    # perception_enabled=false value makes every real frame look "all placed".
+    try:
+        manifest_path = os.path.join(shared_dir, 'frame_manifest.json')
+        with open(manifest_path) as manifest_file:
+            manifest = json.load(manifest_file)
+        if manifest.get('source') == 'real_yolo_pointcloud_node':
+            return None
+    except (OSError, ValueError, TypeError):
+        pass
+
     path = os.path.join(shared_dir, 'pick_state.json')
     try:
         with open(path) as f:
@@ -979,24 +990,26 @@ def render_result(gg, scene_cloud, object_cloud, color_vis, object_stats=None, g
 
 
 def display_loop():
-    """在单独的线程中运行显示循环
+    """在独立进程的主线程中运行显示循环。
 
     将渲染结果实时显示在 matplotlib 窗口中（Docker 内 X11 透传），
-    同时保存为 result.png 供主机的 result_viewer.py 使用。
+    图像由推理主进程原子写入 result.png，本进程只负责读取和显示。
 
     注：Docker 镜像中的 OpenCV 3.4.11 无 GTK 支持（GTK+: NO），
-    因此使用 matplotlib TkAgg 后端替代 cv2.imshow。
+    因此使用 matplotlib TkAgg 后端替代 cv2.imshow。GUI 必须在进程
+    主线程运行；独立进程也能隔离 X11 窗口被关闭时的错误。
     """
     import matplotlib
     matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
 
-    global running, latest_result_image, frame_count
-
     # 创建 matplotlib 窗口
     plt.ion()
     fig, ax = plt.subplots(figsize=(cfgs.display_width / 100,
                                     cfgs.display_height / 100))
+    window_open = threading.Event()
+    window_open.set()
+    fig.canvas.mpl_connect('close_event', lambda _event: window_open.clear())
     ax.axis('off')
     fig.canvas.manager.set_window_title("GraspNet - Perception Results")
     # 窗口置顶（X11 特定）
@@ -1009,27 +1022,41 @@ def display_loop():
     dummy = np.zeros((cfgs.display_height, cfgs.display_width, 3),
                      dtype=np.uint8)
     img_display = ax.imshow(dummy)
+    result_path = os.path.join(cfgs.shared_dir, 'result.png')
+    last_mtime_ns = -1
 
-    while running:
-        if latest_result_image is not None:
-            with display_lock:
-                img = latest_result_image.copy() if latest_result_image is not None else None
-            if img is not None:
+    try:
+        while window_open.is_set():
+            try:
+                mtime_ns = os.stat(result_path).st_mtime_ns
+            except OSError:
+                mtime_ns = -1
+
+            if mtime_ns >= 0 and mtime_ns != last_mtime_ns:
                 try:
-                    # matplotlib 用 RGB，OpenCV 用 BGR
-                    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-                    img_display.set_data(img_rgb)
-                    fig.canvas.draw()
-                    fig.canvas.flush_events()
-                    # 同时保存为文件供主机 viewer 使用
-                    result_path = os.path.join(cfgs.shared_dir, 'result.png')
-                    atomic_imwrite(result_path, img)
+                    if not plt.fignum_exists(fig.number):
+                        break
+                    img = cv2.imread(result_path, cv2.IMREAD_COLOR)
+                    if img is not None:
+                        # matplotlib 用 RGB，OpenCV 用 BGR
+                        img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+                        img_display.set_data(img_rgb)
+                        fig.canvas.draw_idle()
+                        fig.canvas.flush_events()
+                        last_mtime_ns = mtime_ns
                 except Exception as e:
                     print(f"  Display error: {e}", flush=True)
-        else:
-            plt.pause(0.1)
+                    if not plt.fignum_exists(fig.number):
+                        break
+            # Always service GUI close events, but do not continuously redraw
+            # the same image: repeated X11 requests race with destruction.
+            plt.pause(0.05)
+    except KeyboardInterrupt:
+        pass
 
-    plt.close(fig)
+    if plt.fignum_exists(fig.number):
+        plt.close(fig)
+    print("  Display window closed; inference continues without GUI", flush=True)
 
 
 # ===================================================================
@@ -1069,7 +1096,7 @@ def clear_ready_flag(shared_dir):
 #  主循环
 # ===================================================================
 def main():
-    global running, frame_count, latest_result_image, inference_times
+    global running, frame_count, inference_times
 
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
     print(f"=" * 60, flush=True)
@@ -1081,16 +1108,23 @@ def main():
     print(f"  display:     {'ON' if not cfgs.no_display else 'OFF'}", flush=True)
     print(f"=" * 60, flush=True)
 
+    # Matplotlib/Tk 必须在进程主线程中运行。使用 spawn 创建隔离的显示
+    # 进程，避免 X11 BadWindow 或用户关窗导致推理主进程退出。
+    display_process = None
+    if not cfgs.no_display:
+        display_context = multiprocessing.get_context('spawn')
+        display_process = display_context.Process(
+            target=display_loop,
+            name='graspnet-display',
+            daemon=True,
+        )
+        display_process.start()
+        print("Display process started", flush=True)
+
     # 加载网络
     t0 = time.time()
     net = get_net()
     print(f"Model loaded in {time.time()-t0:.1f}s", flush=True)
-
-    # 启动显示线程
-    if not cfgs.no_display:
-        disp_thread = threading.Thread(target=display_loop, daemon=True)
-        disp_thread.start()
-        print("Display thread started", flush=True)
 
     # 确保共享目录存在
     os.makedirs(cfgs.shared_dir, exist_ok=True)
@@ -1178,16 +1212,16 @@ def main():
             grasp_validation = validate_grasps(gg, processed['object_points'])
             write_frame_validation(cfgs.shared_dir, frame_count, processed, gg, grasp_validation)
 
-            # 7. 渲染并显示（渲染在推理主线程，显示在 display_loop 线程，
-            # 通过 latest_result_image + display_lock 交接，避免跨线程竞争）
+            # 7. 渲染并原子写入结果图。独立显示进程监视 result.png，
+            # 不与推理线程或 CUDA/Open3D 上下文交叉访问 GUI。
             if not cfgs.no_display:
                 result_img = render_result(gg, processed['scene_cloud'],
                                            processed['object_cloud'],
                                            processed['color_vis'],
                                            processed['object_stats'],
                                            grasp_validation)
-                with display_lock:
-                    latest_result_image = result_img
+                result_path = os.path.join(cfgs.shared_dir, 'result.png')
+                atomic_imwrite(result_path, result_img)
 
             # 8. 保存结果（grasps_XXXX.npy / scene_XXXX.pcd / objects_XXXX.pcd，
             # 供主机端 open3d_result_viewer.py 复盘）
@@ -1227,8 +1261,9 @@ def main():
         print(f"Average inference time: {np.mean(inference_times):.3f}s", flush=True)
         print(f"FPS: {1.0/np.mean(inference_times):.1f}", flush=True)
 
-    if not cfgs.no_display:
-        cv2.destroyAllWindows()
+    if display_process is not None and display_process.is_alive():
+        display_process.terminate()
+        display_process.join(timeout=2.0)
 
 
 if __name__ == '__main__':
@@ -1239,5 +1274,3 @@ if __name__ == '__main__':
         running = False
     finally:
         running = False
-        if not cfgs.no_display:
-            cv2.destroyAllWindows()

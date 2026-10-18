@@ -18,13 +18,14 @@ setup(
     install_requires=["setuptools"],
     tests_require=["pytest"],
     zip_safe=True,
-    maintainer="liyidong",
-    maintainer_email="liyidong@example.com",
+    maintainer="Sut1313",
+    maintainer_email="323442660+Sut1313@users.noreply.github.com",
     description="YOLOv8-seg ONNX perception bridge for Piper and GraspNet.",
     license="Apache-2.0",
     entry_points={
         "console_scripts": [
             "yolo_bridge_node = piper_yolo.bootstrap:main",
+            "real_yolo_pointcloud_node = piper_yolo.real_bootstrap:main",
         ],
     },
 )

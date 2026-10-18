@@ -1,6 +1,6 @@
-# PiPER YOLOv8-Seg + GraspNet 视觉抓取仿真
+# PiPER YOLOv8-Seg + GraspNet 视觉抓取
 
-这是一个面向 ROS 2 Humble 的完整视觉抓取工程：YOLOv8s-seg 先识别物体并生成二维实例掩膜，RGB-D 桥接节点利用深度和相机内参生成目标点云，GraspNet 估计 6D 抓取候选，MoveIt 2 完成四段预检和抓取、抬升、转移、放置。
+这是一个面向 ROS 2 Humble 的视觉抓取工程：YOLOv8s-seg 先识别物体并生成二维实例掩膜，RGB-D 桥接节点利用深度和相机内参生成目标点云，GraspNet 估计 6D 抓取候选。在轻量仿真中，MoveIt 2 继续完成四段预检和抓取、抬升、转移、放置。
 
 当前推荐链路使用 Gazebo Harmonic，只加载 AG 机器人左侧 PiPER 机械臂、D435i、桌面和三个物体。RViz 默认随 MoveIt 启动。
 
@@ -44,6 +44,8 @@ Gazebo Harmonic RGB-D
 
 `cube`、`cuboid`、`cylinder` 均已完成识别、接近、夹取、抬升、转移、放置、释放和回零测试。候选碰撞过滤和规划筛选已限制处理数量，避免无意义地遍历全部候选。
 
+真机方面已验证 `D435i 对齐 RGB-D → 16 类 YOLO 实例分割 → 目标点云 → GraspNet 相机坐标系候选`。**尚未验证真机手眼标定、候选到 `base_link` 的转换以及真实 PiPER 运动执行**；当前真机节点仅定位为感知和抓取姿态推理。
+
 已知问题：ROS 2 Humble 的 MoveIt/class_loader 在部分机器上收到 Ctrl-C 时可能打印退出阶段的段错误；它发生在关闭流程，不影响此前的规划和抓取运行。
 
 ## 目录结构
@@ -54,13 +56,15 @@ Gazebo Harmonic RGB-D
 │   └── src/
 │       ├── piper_lightweight_sim/    # 推荐：左臂+D435i+桌面+三物体
 │       ├── piper_yolo/               # YOLO ONNX 与 RGB-D/GraspNet 桥接
+│       ├── table_plane_detector/     # 可选：D435i 桌面平面检测与仿真验收
 │       ├── piper_gazebo/             # 保留的 Gazebo Classic 链路
 │       ├── piper_moveit/              # 原有 MoveIt 配置
 │       ├── piper_description/         # PiPER 模型
 │       └── piper_perception/          # 原有感知桥接
 ├── graspnet-baseline/                # GraspNet Docker 与相机推理入口
 ├── models/
-│   └── piper_yolov8s_seg.onnx        # 节点直接加载的运行模型
+│   ├── tabletop_yolov8s_seg_v2.onnx  # 节点默认加载的 16 类桌面模型
+│   └── piper_yolov8s_seg.onnx        # 仿真抓取使用的旧三类模型
 ├── yolo_training/                    # 微调、导出和运行环境脚本
 ├── shared_camera_data/               # 运行时交换目录，不提交 Git
 ├── graspnet-docker-camera.sh         # 前台 GUI/headless GraspNet
@@ -128,6 +132,7 @@ rosdep install --from-paths gazebo_piper_pick_place/src --ignore-src -r -y
 ```bash
 export PIPER_GRASP_ROOT="$(git rev-parse --show-toplevel)"
 export PIPER_YOLO_MODEL="${PIPER_GRASP_ROOT}/models/piper_yolov8s_seg.onnx"
+export PIPER_REAL_YOLO_MODEL="${PIPER_GRASP_ROOT}/models/tabletop_yolov8s_seg_v2.onnx"
 export PIPER_SHARED_DIR="${PIPER_GRASP_ROOT}/shared_camera_data"
 ```
 
@@ -135,18 +140,23 @@ export PIPER_SHARED_DIR="${PIPER_GRASP_ROOT}/shared_camera_data"
 
 ### 2. 检查随仓库分发的模型
 
-运行模型约 47 MB，已包含在 Git 仓库中，不需要在新设备上重新训练：
+真机和仿真两个 ONNX 运行模型各约 46 MB，已包含在 Git 仓库中，不需要在新设备上重新训练：
 
 ```bash
-test -s models/piper_yolov8s_seg.onnx
-sha256sum models/piper_yolov8s_seg.onnx
+test -s models/tabletop_yolov8s_seg_v2.onnx
+sha256sum models/tabletop_yolov8s_seg_v2.onnx
 ```
 
 期望 SHA-256：
 
 ```text
-bd98dd453af0053a8b1cbafaf09327abb9665925871a6b5c4e15acbbc05258d6
+db8b059f17566202870a89f88e835cad19e76b45cbda790cfd59500df5c16620
 ```
+
+真机节点的默认模型识别 16 类桌面物体：`pen/pencil/marker/eraser/ruler/scissors/`
+`stapler/tape/sharpener/block/cup/bottle/book/phone/mouse/remote`。原来的
+`piper_yolov8s_seg.onnx` 三类模型仍由仿真 `yolo_bridge_node` 加载，避免
+`cube/cuboid/cylinder` 状态机与新模型标签发生冲突。
 
 ### 3. 安装 YOLO ONNX 运行环境
 
@@ -348,23 +358,6 @@ ros2 launch piper_gazebo piper_pick_and_place.launch.py
 
 旧链还需要 `gazebo_ros_pkgs` 和 `gazebo_ros2_control`。新开发和性能测试优先使用 `piper_lightweight_sim`。
 
-## 上传 GitHub 前检查
-
-```bash
-# 不应出现用户主目录、令牌或生成物
-rg -n '/((home)|(Users))/|BEGIN.*PRIVATE KEY|ghp_[A-Za-z0-9]+' \
-  --glob '!build/**' --glob '!install/**' --glob '!log/**' .
-
-git diff --check
-git status --short
-
-# 将 origin 设置为你创建的 GitHub 仓库；upstream 只用于同步来源项目
-git remote add origin <你的 GitHub 仓库 URL>
-git remote add upstream https://github.com/H-wq-ha/real_piper_graspnet.git
-git push -u origin HEAD
-```
-
-`.gitignore` 已排除虚拟环境、训练数据、训练 `.pt`、ROS 构建产物、运行时共享文件和 Docker tar 备份；最终 ONNX 模型是有意保留的运行资产。它约 47 MB，低于 GitHub 的 100 MB 单文件硬限制。
 
 ## 常见问题
 
@@ -377,3 +370,96 @@ git push -u origin HEAD
 - 候选筛选太慢：降低 `max_prefilter_candidates`、`max_candidates` 或 GraspNet 的 `collision_candidate_limit`，但会牺牲复杂场景下的成功率。
 
 更详细的轻量场景参数见 [piper_lightweight_sim/README.md](gazebo_piper_pick_place/src/piper_lightweight_sim/README.md)。
+
+## 真机 YOLO 物体点云节点
+
+`real_yolo_pointcloud_node` 是不依赖 Gazebo、MoveIt 或机械臂控制的真机感知
+节点。它要求 RealSense 驱动提供已经对齐到彩色图的深度图，并同时提供两种
+输出：ROS 话题用于显示/调试，`shared_camera_data/` 用于 Docker GraspNet
+抓取姿态推理。共享目录使用与仿真相同的 `.ready` 握手，不会覆盖 GraspNet
+尚未消费的上一帧。
+
+> **真机功能边界：**该节点和 GraspNet 输出的原始候选都在
+> `camera_color_optical_frame` 中。仓库运行时可能生成的
+> `shared_camera_data/camera_to_world.json` 是轻量仿真外参，不是真机手眼标定结果。
+> 未建立真实 `base_link → camera_color_optical_frame` TF、未校验夹爪开口和
+> MoveIt 四段规划前，不要将这些候选直接发送给机械臂。
+
+先启动 D435i：
+
+```bash
+source /opt/ros/humble/setup.bash
+ros2 launch realsense2_camera rs_launch.py \
+  align_depth.enable:=true \
+  enable_sync:=true
+```
+
+再启动真机节点：
+
+```bash
+cd piper_with_yolo_graspnet
+export PIPER_GRASP_ROOT="$(pwd)"
+source /opt/ros/humble/setup.bash
+source gazebo_piper_pick_place/install/setup.bash
+ros2 launch piper_yolo real_yolo_pointcloud.launch.py
+```
+
+节点检测到具有有效深度点的物体后，会原子写入：
+
+```text
+shared_camera_data/color.png
+shared_camera_data/depth.png
+shared_camera_data/meta.mat
+shared_camera_data/instances.npz
+shared_camera_data/detections.json
+shared_camera_data/frame_manifest.json
+shared_camera_data/yolo_overlay.png
+shared_camera_data/.ready
+```
+
+随后可在项目根目录启动仅姿态推理的 GraspNet：
+
+```bash
+./graspnet-docker-camera.sh gui
+# 无界面模式：./graspnet-docker-camera.sh headless
+```
+
+真机帧的 `frame_manifest.json` 会标记来源，GraspNet 将自动忽略共享目录中残留的
+仿真 `pick_state.json`。GraspNet 完成一帧后会删除 `.ready`，真机节点再提交下一帧。
+
+默认接口：
+
+| 方向 | 话题 | 类型 |
+|---|---|---|
+| 输入 | `/camera/camera/color/image_raw` | `sensor_msgs/Image` |
+| 输入 | `/camera/camera/aligned_depth_to_color/image_raw` | `sensor_msgs/Image` |
+| 输入 | `/camera/camera/color/camera_info` | `sensor_msgs/CameraInfo` |
+| 可选输出（默认关闭） | `/yolo/object_cloud` | `sensor_msgs/PointCloud2` |
+| 输出 | `/yolo/overlay` | `sensor_msgs/Image` |
+| 输出 | `/yolo/detections` | `std_msgs/String`（JSON） |
+
+共享目录桥接不依赖 ROS 点云，因此默认关闭 `/yolo/object_cloud` 以减少点云构建、
+序列化和 DDS 传输开销。需要在 RViz 调试点云时可临时开启：
+
+```bash
+ros2 launch piper_yolo real_yolo_pointcloud.launch.py \
+  publish_object_cloud:=true
+```
+
+开启后点云位于 `camera_color_optical_frame`，每个点包含 `x/y/z/rgb/class_id/`
+`instance_id/confidence`。如目标机器的话题名不同，可直接覆盖 launch 参数：
+
+```bash
+ros2 launch piper_yolo real_yolo_pointcloud.launch.py \
+  color_topic:=<彩色图话题> \
+  depth_topic:=<对齐深度图话题> \
+  camera_info_topic:=<彩色相机内参话题> \
+  shared_dir:=<与GraspNet容器挂载一致的目录>
+```
+
+只需要 ROS 输出、不启动 GraspNet 时可关闭共享目录桥接：
+
+```bash
+ros2 launch piper_yolo real_yolo_pointcloud.launch.py \
+  graspnet_bridge_enabled:=false
+```

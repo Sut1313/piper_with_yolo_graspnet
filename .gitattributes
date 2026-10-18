@@ -1,0 +1,8 @@
+# Keep large runtime assets out of text diffs. They remain regular Git objects;
+# both distributed ONNX files are below GitHub's 100 MiB single-file limit.
+*.onnx binary
+*.pt binary
+*.gif binary
+*.webm binary
+*.stl binary
+*.STL binary

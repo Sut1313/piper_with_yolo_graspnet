@@ -5,9 +5,9 @@ verify_pipeline.py — GraspNet 感知流水线验收脚本
 分阶段验证每个组件的正确性。
 
 用法：
-  python verify_pipeline.py              # 全量检查
+  python verify_pipeline.py --stage project  # 静态项目结构检查
+  python verify_pipeline.py              # 全量运行期检查（需要仿真已启动）
   python verify_pipeline.py --stage env  # 仅检查环境和依赖
-  python verify_pipeline.py --stage gazebo    # 仅检查 Gazebo 世界文件
   python verify_pipeline.py --stage docker    # 仅检查 Docker 镜像
   python verify_pipeline.py --stage topics    # 仅检查 ROS 2 话题
   python verify_pipeline.py --stage data      # 仅检查共享目录数据
@@ -26,7 +26,10 @@ import math
 import re
 
 # ── 路径配置 ──────────────────────────────────────────────────────
-PROJECT_DIR = os.path.expanduser('~/piper_graspnet')
+# 默认从本脚本位置确定仓库根目录，可用 PIPER_GRASP_ROOT 覆盖。
+# 克隆到任意用户或任意目录后都能执行验证。
+PROJECT_DIR = os.path.abspath(
+    os.environ.get('PIPER_GRASP_ROOT', os.path.dirname(__file__)))
 GRASPNET_DIR = os.path.join(PROJECT_DIR, 'graspnet-baseline')
 GAZEBO_DIR = os.path.join(PROJECT_DIR, 'gazebo_piper_pick_place')
 SHARED_DIR = os.path.join(PROJECT_DIR, 'shared_camera_data')
@@ -44,6 +47,10 @@ LAUNCH_FILE = os.path.join(
     GAZEBO_DIR, 'src/piper_perception/launch/graspnet_pipeline.launch.py')
 PICK_NODE = os.path.join(
     GAZEBO_DIR, 'src/piper_gazebo/src/pick_and_place.cpp')
+GRASP_COMMON_HEADER = os.path.join(
+    GAZEBO_DIR, 'src/piper_gazebo/include/piper_gazebo/grasp_common.hpp')
+GRASP_TRANSFORM_SOURCE = os.path.join(
+    GAZEBO_DIR, 'src/piper_gazebo/src/grasp_frame_transform.cpp')
 PICK_LAUNCH = os.path.join(
     GAZEBO_DIR, 'src/piper_gazebo/launch/piper_with_gripper/piper_pick_and_place.launch.py')
 
@@ -242,7 +249,7 @@ def check_project():
 
     checks = [
         ("Project root", PROJECT_DIR, True),
-        ("GraspNet symlink", GRASPNET_DIR, True),
+        ("GraspNet directory", GRASPNET_DIR, True),
         ("Gazebo package", GAZEBO_DIR, True),
         ("World file", WORLD_FILE, True),
         ("Execution world file", EXECUTION_WORLD_FILE, True),
@@ -250,7 +257,7 @@ def check_project():
         ("Inference script", INFERENCE_SCRIPT, True),
         ("Docker run script", DOCKER_RUN_SCRIPT, True),
         ("CMakeLists.txt", os.path.join(GAZEBO_DIR, 'src/piper_gazebo/CMakeLists.txt'), True),
-        ("Shared data dir", SHARED_DIR, True),
+        ("Shared data dir", SHARED_DIR, False),
     ]
 
     for name, path, required in checks:
@@ -311,18 +318,25 @@ def check_project():
             else:
                 fail("Execution world missing Gazebo attach plugin")
 
-    if os.path.exists(PICK_NODE) and os.path.exists(INFERENCE_SCRIPT):
+    if all(os.path.exists(path) for path in (
+            PICK_NODE, GRASP_COMMON_HEADER, GRASP_TRANSFORM_SOURCE,
+            INFERENCE_SCRIPT)):
         with open(PICK_NODE) as f:
             pick_content = f.read()
+        with open(GRASP_COMMON_HEADER) as f:
+            grasp_common_content = f.read()
+        with open(GRASP_TRANSFORM_SOURCE) as f:
+            grasp_transform_content = f.read()
         with open(INFERENCE_SCRIPT) as f:
             inference_content = f.read()
+        executor_content = pick_content + grasp_common_content + grasp_transform_content
         expected_tf_tokens = [
             '{0.0, -0.82806033, 0.56063899}',
             '{-1.0, 0.0, 0.0}',
             '{0.0, -0.56063899, -0.82806033}',
             '{0.072, 0.021, 0.548}',
         ]
-        if all(token in pick_content for token in expected_tf_tokens):
+        if all(token in executor_content for token in expected_tf_tokens):
             ok("Pick node camera-to-world TF uses corrected calibration (fixed R column 1 signs, re-fitted T)")
         else:
             fail("Pick node camera-to-world TF does not match corrected calibration")
@@ -331,17 +345,18 @@ def check_project():
         else:
             fail("Inference script camera-to-world TF does not match corrected calibration")
         expected_graspnet_tcp_tokens = [
-            '{0.0, 0.0, 1.0}',
-            '{0.0, 1.0, 0.0}',
-            '{-1.0, 0.0, 0.0}',
+            '{0.0, -1.0, 0.0}',
+            '{0.0, 0.0, -1.0}',
+            '{1.0, 0.0, 0.0}',
         ]
-        if all(token in pick_content for token in expected_graspnet_tcp_tokens):
-            ok("Pick node maps GraspNet +X approach to Piper TCP +Z")
+        if all(token in executor_content for token in expected_graspnet_tcp_tokens):
+            ok("Pick node uses the calibrated GraspNet-to-Piper TCP mapping")
         else:
-            fail("Pick node GraspNet-to-Piper TCP axis mapping is inverted")
+            fail("Pick node GraspNet-to-Piper TCP mapping does not match calib_18")
         if (
-            '[0.0, 0.0, 1.0]' in inference_content
-            and '[-1.0, 0.0, 0.0]' in inference_content
+            '[0.0, -1.0, 0.0]' in inference_content
+            and '[0.0, 0.0, -1.0]' in inference_content
+            and '[1.0, 0.0, 0.0]' in inference_content
         ):
             ok("Inference diagnostics use the same GraspNet-to-Piper TCP mapping")
         else:
@@ -370,10 +385,15 @@ def check_project():
             ok("Pick node checks TCP-to-object distance before accepting grasp")
         else:
             fail("Pick node missing TCP-to-object distance gate")
-        if 'setPoseTarget(target, kEndEffectorLink)' in pick_content and 'setPositionTarget(' not in pick_content:
-            ok("Pick node fallback planning preserves full GraspNet pose")
+        if (
+            'planFullPoseWithSeeds' in pick_content
+            and 'setJointValueTarget(*target_state)' in pick_content
+            and 'angle_err > 0.10' in pick_content
+            and 'setPositionTarget(' not in pick_content
+        ):
+            ok("Pick node seeded planning preserves and FK-validates the full GraspNet pose")
         else:
-            fail("Pick node fallback planning may drop GraspNet orientation")
+            fail("Pick node seeded planning may drop the GraspNet orientation")
         if 'reachableTopDownTcpOrientation' not in pick_content and 'projecting to reachable top-down' not in pick_content:
             ok("Pick node does not replace GraspNet orientation with a fallback pose")
         else:

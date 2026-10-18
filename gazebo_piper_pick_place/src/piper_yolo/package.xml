@@ -3,13 +3,14 @@
   <name>piper_yolo</name>
   <version>0.1.0</version>
   <description>YOLOv8-seg ONNX perception bridge for Piper and GraspNet.</description>
-  <maintainer email="liyidong@example.com">liyidong</maintainer>
+  <maintainer email="323442660+Sut1313@users.noreply.github.com">Sut1313</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_python</buildtool_depend>
 
   <exec_depend>rclpy</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
   <exec_depend>cv_bridge</exec_depend>
   <exec_depend>message_filters</exec_depend>
   <exec_depend>launch</exec_depend>

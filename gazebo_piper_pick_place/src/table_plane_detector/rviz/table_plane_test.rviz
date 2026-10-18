@@ -1,0 +1,30 @@
+Panels:
+  - Class: rviz_common/Displays
+Visualization Manager:
+  Class: ""
+  Global Options:
+    Background Color: 48; 48; 48
+    Fixed Frame: camera_depth_optical_frame
+  Displays:
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Camera point cloud
+      Topic:
+        Value: /table_camera/points_optical
+      Size (Pixels): 2
+      Style: Points
+      Enabled: true
+    - Class: rviz_default_plugins/PointCloud2
+      Name: Table inliers
+      Topic:
+        Value: /table_plane_detector/inliers
+      Color: 25; 255; 25
+      Size (Pixels): 3
+      Style: Points
+      Enabled: true
+    - Class: rviz_default_plugins/Marker
+      Name: Table plane
+      Marker Topic:
+        Value: /table_plane_detector/marker
+      Enabled: true
+  Enabled: true
+  Name: root

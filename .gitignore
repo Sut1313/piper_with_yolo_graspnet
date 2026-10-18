@@ -2,8 +2,9 @@
 shared_camera_data/
 models/*.onnx
 models/*.pt
-# The runtime model is intentionally versioned so a fresh clone can run.
+# Runtime models are intentionally versioned so a fresh clone can run.
 !models/piper_yolov8s_seg.onnx
+!models/tabletop_yolov8s_seg_v2.onnx
 /*.pt
 weights/*.pt
 runs/
@@ -23,6 +24,12 @@ logs/*
 build/
 install/
 log/
+CMakeFiles/
+.colcon/
+.pytest_cache/
+.coverage
+coverage.xml
+*.egg-info/
 __pycache__/
 *.pyc
 *.pyo
@@ -30,7 +37,11 @@ __pycache__/
 # ===== 本地调试 =====
 *.tmp
 *.orig
+*.swp
+*~
 .DS_Store
+.idea/
+.vscode/
 
 # ===== 大文件/环境 =====
 # 镜像 tar 备份(若放回 docker/ 会自动忽略)
